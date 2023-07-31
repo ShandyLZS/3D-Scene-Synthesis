@@ -318,9 +318,9 @@ def write_data_to_hdf5(file_handle, name, data):
     if isinstance(data, (list, tuple)):
         if not len(data):
             file_handle.create_dataset(name,  data=h5py.Empty("i"))
-        elif isinstance(data[0], (int, np.integer)):
+        elif isinstance(data[0], (int, np.int_, np.intc)):
             file_handle.create_dataset(name, shape=(len(data),), dtype=np.int32, data=np.array(data))
-        elif isinstance(data[0], (float, np.float)):
+        elif isinstance(data[0], (float, np.single, np.double)):
             file_handle.create_dataset(name, shape=(len(data),), dtype=np.float32, data=np.array(data))
         elif isinstance(data[0], str):
             asciiList = [item.encode("ascii", "ignore") for item in data]
@@ -333,7 +333,7 @@ def write_data_to_hdf5(file_handle, name, data):
             raise NotImplementedError
     elif isinstance(data, (int, np.integer)):
         file_handle.create_dataset(name, shape=(1,), dtype='i', data=data)
-    elif isinstance(data, (float, np.float)):
+    elif isinstance(data, (float, np.single, np.double)):
         file_handle.create_dataset(name, shape=(1,), dtype='f', data=data)
     elif isinstance(data, str):
         dt = h5py.special_dtype(vlen=str)

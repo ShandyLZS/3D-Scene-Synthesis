@@ -207,7 +207,7 @@ def load_device(cfg):
     '''
     if cfg.config.device.use_gpu and torch.cuda.is_available():
         cfg.info('GPU mode is on.')
-        return torch.device(torch.cuda.current_device())
+        return torch.device("cuda:" + str(cfg.available_gpus[0]))
     else:
         cfg.info('CPU mode is on.')
         return torch.device("cpu")
@@ -234,7 +234,7 @@ def load_model(cfg, device):
             model = nn.parallel.DistributedDataParallel(model, device_ids=[device], output_device=device,
                                                         static_graph=True)
         else:
-            model = nn.DataParallel(model)
+            model = nn.DataParallel(model, device_ids=[device])
 
         net[net_type] = model
 

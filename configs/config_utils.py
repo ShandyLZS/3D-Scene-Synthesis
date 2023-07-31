@@ -10,7 +10,8 @@ from collections import defaultdict
 class CONFIG(object):
     def __init__(self, config):
         self.config = config
-        self.is_master = is_master_proc(config.distributed.num_gpus)
+        self.is_master = is_master_proc(config.distributed.num_gpus, config)
+        self.available_gpus = list(config.distributed.available_gpus)
         aug_num = 4 if config.data.aug else 1
         if config.data.dataset == '3D-Front':
             from utils.threed_front import Threed_Front_Config

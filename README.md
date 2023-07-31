@@ -142,7 +142,8 @@ Here we use bedroom data as an example. Training on living rooms is the same.
        resume=False \
        finetune=False \
        weight=[] \
-       distributed.num_gpus=4 \
+       distributed.available_gpus=[5, 6]\
+       distributed.num_gpus=2 \
        data.dataset=3D-Front \
        data.split_type=bed \
        data.n_views=20 \
@@ -297,7 +298,7 @@ Please replace the keyword `weight` below with your trained weight path.
 *Note: you may need X-server to showcase the visualization windows from [VTK](https://vtk.org/).*
 1. Scene Generation (with 3D-Front).
    ```commandline
-   python utils/threed_front/vis/render_pred.py --pred_file outputs/3D-Front/generation/YEAR-MONTH-DAY/HOUR-MINUTE-SECOND/vis/bed/sample_X_X.npz [--use_retrieval]
+   python utils/threed_front/vis/vis_pred.py --pred_file outputs/3D-Front/generation/YEAR-MONTH-DAY/HOUR-MINUTE-SECOND/vis/bed/sample_X_X.npz [--use_retrieval]
    ```
    
 2. Single-view Reconstruction (with ScanNet)

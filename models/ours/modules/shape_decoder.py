@@ -22,7 +22,7 @@ class ShapeDecoder(nn.Module):
         self.device = device
 
         '''Modules'''
-        self.src_mesh = ico_sphere(4, 'cuda')
+        self.src_mesh = ico_sphere(4, device=self.device)
         inst_latent_len = cfg.config.data.backbone_latent_len
         self.mlp_feat = nn.Sequential(nn.Linear(inst_latent_len, 512), nn.ReLU(),
                                       nn.Linear(512, 256))

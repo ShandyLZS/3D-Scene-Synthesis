@@ -155,7 +155,7 @@ class Generator(BaseNetwork):
             render_mask_tr = data.get('render_mask_tr', None)
         else:
             n_batch, n_object = backbone_feat.shape[:2]
-            meshes = ico_sphere(4, 'cuda').extend(n_batch * n_object)
+            meshes = ico_sphere(4, device=self.device).extend(n_batch * n_object)
             render_mask_tr = None
 
         # generate cameras

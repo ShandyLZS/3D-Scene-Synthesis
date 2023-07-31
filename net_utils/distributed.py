@@ -76,7 +76,7 @@ def run(proc_rank, world_size, port, error_queue, fun, fun_args, fun_kwargs):
     finally:
         destroy_process_group()
 
-def multi_proc_run(num_proc, fun, fun_args=(), fun_kwargs={}):
+def multi_proc_run(available_gpus, fun, fun_args=(), fun_kwargs={}):
     """Runs a function in a multi-proc setting."""
 
     # Handle errors from training subprocesses
@@ -86,7 +86,8 @@ def multi_proc_run(num_proc, fun, fun_args=(), fun_kwargs={}):
     # Run each training subprocess
     port = random.randint(10001, 20002)
     ps = []
-    for i in range(num_proc):
+    num_proc = len(available_gpus)
+    for i in available_gpus:
         p_i = mp.Process(
             target=run,
             args=(i, num_proc, port, error_queue, fun, fun_args, fun_kwargs)
@@ -101,15 +102,18 @@ def multi_proc_run(num_proc, fun, fun_args=(), fun_kwargs={}):
 
 """Distributed helpers."""
 
-def is_master_proc(num_gpus):
+def is_master_proc(num_gpus, config):
     """Determines if the current process is the master process.
 
     Master process is responsible for logging, writing and loading checkpoints.
     In the multi GPU setting, we assign the master role to the rank 0 process.
     When training using a single GPU, there is only one training processes
     which is considered the master processes.
+
+    Modified: when using multiple GPUs, the first in available list is the main 
+    process.
     """
-    return num_gpus == 1 or torch.distributed.get_rank() == 0
+    return num_gpus == 1 or torch.distributed.get_rank() == config.distributed.available_gpus[0]
 
 def get_world_size():
     if not dist.is_available():
