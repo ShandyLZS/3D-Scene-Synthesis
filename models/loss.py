@@ -1,6 +1,8 @@
 #  Copyright (c) 2.2022. Yinyu Nie
 #  License: MIT
+import numpy as np
 from scipy import stats
+import trimesh
 import torch
 from torch.nn import L1Loss, CrossEntropyLoss, BCEWithLogitsLoss, CosineSimilarity, BCELoss
 import torch.distributions as dist
@@ -9,7 +11,11 @@ from net_utils.matcher_tracking import HungarianMatcher
 from net_utils.box_utils import normalize_x1y1x2y2
 from external.fast_transformers.fast_transformers.masking import LengthMask
 from torch.nn import functional as F
-
+from utils.threed_front import Threed_Front_Config
+from utils.threed_front.tools.threed_future_dataset import ThreedFutureDataset
+import pytorch3d.loss.mesh_edge_loss as mesh_edge_loss
+from pytorch3d.loss import chamfer_distance
+from pathlib import Path
 
 class BaseLoss(object):
     '''base loss class'''
@@ -65,6 +71,11 @@ class MultiViewRenderLoss(BaseLoss):
         self.ce_loss = CrossEntropyLoss(reduction='mean')
         self.bce_loss = BCELoss(reduction='none')
         self.completeness_loss = BCEWithLogitsLoss(reduction='mean')
+        self.edge_loss = mesh_edge_loss
+        self.dataset_config = cfg.dataset_config
+        self.model_dataset = ThreedFutureDataset.from_pickled_dataset(
+            self.dataset_config.root_path.joinpath(
+            'pickled_threed_future_model_%s.pkl' % (cfg.room_type)))
 
     def _get_src_permutation_idx(self, indices):
         # permute predictions following indices
@@ -128,6 +139,7 @@ class MultiViewRenderLoss(BaseLoss):
         '''Calculate rendering loss.'''
         # indicates the instance marks for each object
         gt_obj_view_mask = gt_data['inst_marks']
+        max_obj_len = gt_data['max_len'].max().cpu()
         # indicates how many objects occur in each scene
         if (self.cfg.config.mode == 'demo' and self.cfg.config.data.n_views == 1) or (
                 self.cfg.config.mode == 'test' and self.cfg.config.test.n_views_for_finetune == 1):
@@ -141,12 +153,17 @@ class MultiViewRenderLoss(BaseLoss):
         est_points_2d = est_data['points_2d']
         est_cls_scores = est_data['classes_completeness'][..., :-1]
         in_frustum = est_data['in_frustum']
+        pred_meshes = est_data['meshes']
+        pred_meshes_verts = pred_meshes._verts_padded
+        pred_meshes_faces = pred_meshes._faces_padded
 
         '''prepare gt data'''
         gt_box2ds = gt_data['box2ds_tr']
         cam_Ks = gt_data['cam_K']
         cam_Ts = gt_data['cam_T']
         image_size = gt_data['image_size']
+        gt_jids_ndx = gt_data['jids_ndx']
+        gt_jids_ndx = gt_jids_ndx[:, 0, :].reshape(-1)
 
         gt_cls = gt_box2ds[..., 4:]
         gt_labels = gt_cls.argmax(dim=-1).max(dim=1)[0]
@@ -167,8 +184,11 @@ class MultiViewRenderLoss(BaseLoss):
         gt = {'x1y1x2y2': normalized_gt_x1y1x2y2, 'cls': gt_labels}
 
         indices = self.matcher(pred, gt, pred_mask=pred_mask, gt_mask=gt_obj_view_mask)
+        # dim0: batch_idx, dim1: idx
         batch_pred_idx = self._get_src_permutation_idx(indices)
         batch_gt_idx = self._get_tgt_permutation_idx(indices)
+        mesh_pred_idx = batch_pred_idx[0] * max_obj_len + batch_pred_idx[1]
+        mesh_gt_idx = batch_gt_idx[0] * max_obj_len + batch_gt_idx[1]
 
         '''get in_frustum mask'''
         gt_obj_view_mask = gt_obj_view_mask[batch_gt_idx]
@@ -239,13 +259,27 @@ class MultiViewRenderLoss(BaseLoss):
                 mask_loss = torch.masked_select(mask_loss, iou_mask).mean()
             else:
                 mask_loss = torch.tensor(0., device=self.device)
+
+            edge_loss = self.edge_loss(est_data['meshes'])
+
+            # Chamfer distance
+            pred_meshes_verts = pred_meshes_verts[mesh_pred_idx]
+            # pred_meshes_faces = pred_meshes_faces[mesh_pred_idx]
+            gt_jid_list = [self.cfg.model_jid_list[jid_ndx] for jid_ndx in gt_jids_ndx[mesh_gt_idx]]
+            #chamfer_distance = self.CD_retrieval(pred_meshes_verts, gt_jid_list, device=self.device)
+            chamfer_dist = self.CD_retrieval_parallel(pred_meshes_verts, gt_jid_list, device=self.device)
         else:
             mask_loss = torch.tensor(0., device=self.device)
+            edge_loss = torch.tensor(0., device=self.device)
+            chamfer_dist = torch.tensor(0., device=self.device)
+
 
         losses = {'frustum_loss': frustum_loss,
                   'box_cls_loss': box_cls_loss,
                   'box_loss': box_loss,
-                  'mask_loss': mask_loss}
+                  'mask_loss': mask_loss,
+                  'edge_loss': edge_loss,
+                  'chamfer_dist': chamfer_dist,}
 
         extra_output = {}
         if return_matching:
@@ -253,7 +287,104 @@ class MultiViewRenderLoss(BaseLoss):
 
         return losses, extra_output
 
+    def CD_retrieval_parallel(self, verts, gt_jid_list, device):
+        CD_value = self.retrieval_parallel(verts, gt_jid_list, device)
+        return CD_value
+
+    def CD_retrieval(self, verts, gt_jid_list, device):
+        CD_sum = torch.tensor(0., device=self.device)
+        for inst_id in range(verts.shape[0]):
+            single_verts = verts[inst_id,:,:]
+            CD_value = self.retrieval_model(single_verts, gt_jid_list[inst_id], device)
+            CD_sum += CD_value
+        return CD_sum
+
+    def retrieval_parallel(self, source_vertices, jid_list, device):
+        '''
+        :param source_vertices: (num_obj x num_vertices x 3)
+        '''
+        # ours new
+        source_lbdb = source_vertices.min(axis=1)[0]
+        source_ubdb = source_vertices.max(axis=1)[0]
+        idx = torch.argwhere(source_lbdb[:, 1]<0.3)
+        source_lbdb[idx, 1] = 0
+        source_center = (source_lbdb + source_ubdb) / 2.
+        query_vertices = source_vertices - source_center.unsqueeze(dim=1)
+        query_vertices = query_vertices/ (query_vertices.max(dim=1)[0].max(dim=1)[0] * 2).unsqueeze(dim=1).unsqueeze(dim=1)
+        # 90 degree around y axis
+        per_rot_mat = torch.tensor([[0, 0, 1], [0, 1, 0], [-1, 0, 0]]).float().to(device)
+        oi_list = [self.model_dataset._filter_objects_by_jid(jid) for jid in jid_list]
+        key_vertices_list = []
+        for oi in oi_list:
+            key_vertices_list.append(trimesh.load(self.cfg.root_dir+'/'+oi[0].raw_model_path, force='mesh').sample(5000)*oi[0].scale)
+        key_vertices = torch.from_numpy(np.array(key_vertices_list)).to(device).float()
+
+        key_lbdb = key_vertices.min(axis=1)[0]
+        key_ubdb = key_vertices.max(axis=1)[0]
+        key_centroid = (key_lbdb + key_ubdb) / 2.
+        key_vertices = key_vertices - key_centroid.unsqueeze(dim=1)       
+        key_vertices = key_vertices / (key_vertices.max(dim=1)[0].max(dim=1)[0] * 2).unsqueeze(dim=1).unsqueeze(dim=1)
+
+        key_vertices_w_rot = key_vertices.unsqueeze(dim=1)
+        for i in range(3):
+            key_vertices_w_rot = torch.cat((key_vertices_w_rot, key_vertices_w_rot[:, -1, ...].matmul(per_rot_mat).unsqueeze(dim=1)), dim=1)
+
+
+        # 4 x n_objs
+        query_vertices = query_vertices.unsqueeze(dim=1).expand(key_vertices_w_rot.shape[0], 4, -1, -1)
+
+        CD_value = []
+        for i in range(key_vertices_w_rot.shape[0]):
+            cham_dist, cham_normals = chamfer_distance(query_vertices[i,...].squeeze(dim=0), key_vertices_w_rot[i,...].squeeze(dim=0), batch_reduction=None,
+                                                   point_reduction='mean', norm=1) 
+            CD_value.append(cham_dist.min())
+
+        return sum(CD_value)
+
+    def retrieval_model(self, source_vertices, jid, device):
+        # ours new
+        source_lbdb = source_vertices.min(axis=0)[0]
+        source_ubdb = source_vertices.max(axis=0)[0]
+        attach_to_floor = False
+        if source_lbdb[1] < 0.3:
+            attach_to_floor = True
+            source_lbdb[1] = 0
+        source_center = (source_lbdb + source_ubdb) / 2.
+
+        query_vertices = source_vertices - source_center
+        query_vertices = query_vertices/ (query_vertices.max() * 2)
+
+        # 90 degree around y axis
+        per_rot_mat = np.array([[0, 0, 1], [0, 1, 0], [-1, 0, 0]])
+        oi = self.model_dataset._filter_objects_by_jid(jid)
+        key_vertices = trimesh.load(oi.raw_model_path, force='mesh').sample(5000)
+
+        key_vertices = key_vertices * oi.scale
+        key_lbdb = key_vertices.min(axis=0)
+        key_ubdb = key_vertices.max(axis=0)
+        key_centroid = (key_lbdb + key_ubdb) / 2.
+        key_vertices = key_vertices - key_centroid          
+        key_vertices = key_vertices / (key_vertices.max() * 2)
+
+        key_vertices_w_rot = [key_vertices]
+        for i in range(3):
+            key_vertices_w_rot.append(key_vertices_w_rot[-1].dot(per_rot_mat))
+
+        # 4 x n_objs
+        key_vertices_w_rot = torch.from_numpy(np.array(key_vertices_w_rot)).to(device).float()
+        key_vertices_w_rot = key_vertices_w_rot.flatten(0, 1)
+
+        query_vertices = torch.from_numpy(query_vertices)[None].expand(key_vertices_w_rot.size(0), -1, -1).to(device).float()
+
+        cham_dist, cham_normals = chamfer_distance(query_vertices, key_vertices_w_rot, batch_reduction=None,
+                                                   point_reduction='mean', norm=1)
+        CD_value = cham_dist.min()
+
+        return CD_value
+    
+
     def __call__(self, est_data, gt_data, start_deform=False, return_matching=False, if_mask_loss=True, **kwargs):
+        # def __call__(self, est_data, gt_data, kl_div, start_deform=False, return_matching=False, if_mask_loss=True, **kwargs):
         '''Calculate rendering loss'''
         view_losses, extra_output = self.views_loss(est_data, gt_data, start_deform,
                                                     return_matching=return_matching)
@@ -272,13 +403,16 @@ class MultiViewRenderLoss(BaseLoss):
             completeness_loss = completeness_loss * (self.cfg.config.data.n_views != 1)
 
         total_loss = view_losses['frustum_loss'] + view_losses['box_cls_loss'] + 5 * view_losses['box_loss'] + completeness_loss
+        # total_loss = view_losses['frustum_loss'] + view_losses['box_cls_loss'] + 5 * view_losses['box_loss'] + completeness_loss +kl_div
 
         if start_deform:
             mask_loss = view_losses['mask_loss']
+            edge_loss = view_losses['edge_loss']
+            chamfer_dist = view_losses['chamfer_dist']
             if if_mask_loss == False:
                 mask_loss = mask_loss * 0
 
-            total_loss = total_loss + 2 * mask_loss
+            total_loss = total_loss + 3 * mask_loss + 0.1 * edge_loss + chamfer_dist
 
         return {'total': total_loss * self.weight, **view_losses,
                 'completeness_loss': completeness_loss}, extra_output

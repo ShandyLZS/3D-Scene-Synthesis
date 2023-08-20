@@ -1,5 +1,8 @@
 #  Copyright (c) 9.2022. Yinyu Nie
 #  License: MIT
+import os
+# Env variable for server side
+os.environ['DISPLAY']=':99.0'
 import sys
 sys.path.append('.')
 from datetime import datetime
@@ -12,7 +15,7 @@ import vtk
 from utils.vis_base import VIS_BASE
 import seaborn as sns
 from utils.threed_front.tools.threed_future_dataset import ThreedFutureDataset
-
+import torch
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Visualize a 3D-FRONT gt sample.")
@@ -24,6 +27,10 @@ def parse_args():
                         help="The directory of dumped results. e.g., 2022-10-09-19-30-20")
     parser.add_argument('--path_to_pickled_3d_futute_models', type=str, help='pickled 3d-future dir from ATISS',
                         default='datasets/3D-Front/pickled_threed_future_model_%s.pkl')
+    parser.add_argument('--cam_pos', type=list, help='Camera position with 3 numbers',
+                        default=[0, 6, 0])
+    parser.add_argument('--device', type=int, help='setup device',
+                        default=0)
     return parser.parse_args()
 
 
@@ -35,12 +42,13 @@ class VIS_3DFRONT_RESULT(VIS_BASE):
         self.class_ids = category_ids
         self.class_names = [class_names[cls_id] for cls_id in category_ids]
         self.cls_palette = np.array(sns.color_palette('hls', len(class_names)))
+        self.cam_pos = kwargs['cam_pos']
 
     def set_render(self, *args, **kwargs):
         renderer = vtk.vtkRenderer()
         renderer.ResetCamera()
 
-        cam_loc = np.array([0, 6, 0])
+        cam_loc = np.array(self.cam_pos) # np.array([3, 0, 0])
         cam_fp = np.array([0, 0, 0])
         cam_up = np.array([1, 0, 0])
         fov_y = (2 * np.arctan((self.cam_K[1][2] * 2 + 1) / 2. / self.cam_K[1][1])) / np.pi * 180
@@ -70,7 +78,7 @@ class VIS_3DFRONT_RESULT(VIS_BASE):
         renderer.SetBackground(1., 1., 1.)
         return renderer
 
-def read_pred_data(pred_file, dataset_config, use_retrieval=False, objects_dataset=None):
+def read_pred_data(pred_file, dataset_config, device, use_retrieval=False, objects_dataset=None):
     pred_data = np.load(pred_file)
     box3ds = np.concatenate([pred_data['centers'], pred_data['sizes']], axis=-1)
     box3ds = np.pad(box3ds, ((0, 0), (0, 1)))
@@ -88,13 +96,13 @@ def read_pred_data(pred_file, dataset_config, use_retrieval=False, objects_datas
         if not save_file.exists():
             color = color_palette[category_ids[inst_id]]
             if use_retrieval:
-                vertices, faces = retrieval_model(vertices, category_ids[inst_id], objects_dataset, dataset_config)
+                vertices, faces = retrieval_model(vertices, category_ids[inst_id], objects_dataset, dataset_config, device)
             mesh = trimesh.Trimesh(vertices=vertices, faces=faces, process=False, vertex_colors=color)
             mesh.export(save_file)
         inst_mesh_files.append(str(save_file))
     return {'box3ds': box3ds, 'category_ids': category_ids, 'mesh_files': inst_mesh_files}
 
-def retrieval_model(source_vertices, cls_id, objects_dataset, dataset_config):
+def retrieval_model(source_vertices, cls_id, objects_dataset, dataset_config, device):
 
     query_label = dataset_config.label_names[cls_id]
 
@@ -108,7 +116,7 @@ def retrieval_model(source_vertices, cls_id, objects_dataset, dataset_config):
     source_center = (source_lbdb + source_ubdb) / 2.
 
     query_vertices = source_vertices - source_center
-    furniture, rot_mat = objects_dataset.get_closest_furniture_to_box(query_label, query_vertices, dataset_config.generic_mapping)
+    furniture, rot_mat = objects_dataset.get_closest_furniture_to_box(query_label, query_vertices, dataset_config.generic_mapping, device)
 
     furniture_mesh = trimesh.load(furniture.raw_model_path)
     key_vertices = furniture_mesh.vertices
@@ -149,13 +157,17 @@ if __name__ == '__main__':
     if not pred_file.exists():
         raise FileNotFoundError('There is no such file.')
     '''read pred data'''
-    pred_data = read_pred_data(pred_file, dataset_config, args.use_retrieval, objects_dataset)
+    device = args.device
+    
+    pred_data = read_pred_data(pred_file, dataset_config, device, args.use_retrieval, objects_dataset)
 
     if pred_data is None:
         raise ValueError('pred_data is None.')
 
     '''visualize results'''
     # vis prediction
+    cam_pos = [int(i) for i in args.cam_pos]
     viser = VIS_3DFRONT_RESULT(category_ids=pred_data['category_ids'], class_names=dataset_config.label_names,
-                               mesh_files=pred_data['mesh_files'])
+                               mesh_files=pred_data['mesh_files'], cam_pos = cam_pos)
+    target_path = str(pred_file).split('.')[0] + '_' + '_'.join(args.cam_pos) + '.jpg'
     viser.visualize()

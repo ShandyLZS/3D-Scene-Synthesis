@@ -81,6 +81,13 @@ class CONFIG(object):
                 test_samples = [scene_roots['_'.join(filename.split('_')[:2])] + '/%s.hdf5' % (filename) for filename in test_filenames]
                 self.demo_samples = [Path(os.path.join(config.root_dir, sample)) for sample in test_samples if os.path.exists(os.path.join(config.root_dir, sample))]
                 # self.demo_samples = list((Path(config.demo.input_dir).iterdir()))
+        # For mesh retrieval
+        self.dataset_config = dataset_config
+        self.room_type = config.data.split_type
+        self.root_dir = config.root_dir
+        self.model_mapping = read_json(str(dataset_config.model_mapping_path))
+        self.model_jid_list = list(self.model_mapping.values())
+
 
     def info(self, content):
         if self.is_master:

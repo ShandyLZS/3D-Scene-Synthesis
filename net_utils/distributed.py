@@ -63,11 +63,11 @@ class ErrorHandler(object):
 
 """Multiprocessing helpers."""
 
-def run(proc_rank, world_size, port, error_queue, fun, fun_args, fun_kwargs):
+def run(proc_rank, device_id, world_size, port, error_queue, fun, fun_args, fun_kwargs):
     """Runs a function from a child process."""
     try:
         # Initialize the process group
-        init_process_group(proc_rank, world_size, port)
+        init_process_group(proc_rank, device_id, world_size, port)
         # Run the function
         fun(*fun_args, **fun_kwargs)
     except:
@@ -87,10 +87,10 @@ def multi_proc_run(available_gpus, fun, fun_args=(), fun_kwargs={}):
     port = random.randint(10001, 20002)
     ps = []
     num_proc = len(available_gpus)
-    for i in available_gpus:
+    for rank, device_id in enumerate(available_gpus):
         p_i = mp.Process(
             target=run,
-            args=(i, num_proc, port, error_queue, fun, fun_args, fun_kwargs)
+            args=(rank, device_id, num_proc, port, error_queue, fun, fun_args, fun_kwargs)
         )
         ps.append(p_i)
         p_i.start()
@@ -113,7 +113,8 @@ def is_master_proc(num_gpus, config):
     Modified: when using multiple GPUs, the first in available list is the main 
     process.
     """
-    return num_gpus == 1 or torch.distributed.get_rank() == config.distributed.available_gpus[0]
+    return num_gpus == 1 or \
+        torch.distributed.get_rank() == config.distributed.available_gpus[0]
 
 def get_world_size():
     if not dist.is_available():
@@ -228,12 +229,12 @@ def all_gather(data):
     return data_list
 
 
-def init_process_group(proc_rank, world_size, port):
+def init_process_group(proc_rank, device_id, world_size, port):
     """Initializes the default process group."""
     # Set the GPU to use
-    print(proc_rank)
+    print(f'Process {proc_rank} currently using device: {device_id}')
 
-    torch.cuda.set_device(proc_rank)
+    torch.cuda.set_device(device_id)
     # Initialize the process group
     torch.distributed.init_process_group(
         backend="nccl",

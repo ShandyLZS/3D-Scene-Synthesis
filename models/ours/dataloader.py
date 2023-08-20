@@ -97,7 +97,8 @@ class THREEDFRONT(Base_Dataset):
         return insts
 
     @staticmethod
-    def track_insts(parsed_data, unique_marks):
+    def track_insts(parsed_data, unique_marks, model_mapping=None):
+        # build jid dict
         box2ds_template = -1 * np.ones(shape=(len(unique_marks), 4), dtype=np.int32)
         category_ids_template = np.zeros(shape=(len(unique_marks),), dtype=np.int32)
         masks_template = np.array([None] * len(unique_marks))
@@ -122,6 +123,11 @@ class THREEDFRONT(Base_Dataset):
             empty_inst_marks = inst_marks_template.copy()
             empty_inst_marks[ordering] = True
             insts_data['inst_marks'] = empty_inst_marks
+            # jids
+            if model_mapping:
+                insts_data['jids_ndx'] = [list(model_mapping.keys()).index(mark) for mark in unique_marks]
+            else:
+                insts_data['jids_ndx'] = None
 
         return parsed_data
 
@@ -184,6 +190,7 @@ class THREEDFRONT(Base_Dataset):
         data['masks_tr'] = inst_masks.astype(np.int64)
         data['render_mask_tr'] = render_mask.astype(bool)
         data['inst_marks'] = np.array(inst_marks, dtype=bool)
+        data['jids_ndx'] = np.array(insts['jids_ndx'], dtype=np.int32)
         return data
 
     def __getitem__(self, idx):
@@ -221,12 +228,13 @@ class THREEDFRONT(Base_Dataset):
             random.shuffle(unique_marks)
 
         # re-organize instances following track ids
-        parsed_data = self.track_insts(parsed_data, unique_marks)
+        parsed_data = self.track_insts(parsed_data, unique_marks, self.cfg.model_mapping)
 
         keywords = ['sample_name', 'cam_K', 'image_size', 'cam_T', 'box2ds_tr', 'inst_marks']
 
         if self.cfg.config.start_deform:
             keywords.append('masks_tr')
+            keywords.append('jids_ndx')
             if self.cfg.config.data.dataset == 'ScanNet':
                 keywords.append('render_mask_tr')
 
@@ -293,7 +301,7 @@ def my_worker_init_fn(worker_id):
 
 def collate_fn(samples):
     padding_keys = ['box2ds_tr']
-    room_level_keys = ['inst_marks']
+    room_level_keys = ['inst_marks', 'jids_ndx']
     max_length = max(sample[0]['max_len'] for sample in samples)
 
     collated_batch = {}

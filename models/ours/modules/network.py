@@ -48,8 +48,8 @@ class VAD(BaseNetwork):
         interpolated = self.latent_encode.interpolate(idx1, idx2, interval)
         return interpolated
 
-    def sample_latent(self):
-        interpolated = self.latent_encode.sample_latent()
+    def sample_latent(self, mode_weights):
+        interpolated = self.latent_encode.sample_latent(mode_weights)
         return interpolated
 
     def forward(self, data):
@@ -147,6 +147,7 @@ class Generator(BaseNetwork):
         else:
             max_len = data['max_len'].max()
         backbone_feat, completeness_score = self.backbone(latent_z, max_len, data['room_type_idx'])
+        # backbone_feat, completeness_score, latent_z = self.backbone(latent_z, max_len, data['room_type_idx'])
 
         box3ds = self.box_gen(backbone_feat, completeness_score)
 
@@ -163,10 +164,13 @@ class Generator(BaseNetwork):
                                  render_mask_tr, start_deform=start_deform, pred_mask=data['max_len'][:, 0], **kwargs)
 
         return renderings
+        # return renderings, latent_z
 
     def loss(self, pred_data, gt_data, start_deform=False, **kwargs):
+        # def loss(self, pred_data, gt_data, kl_div, start_deform=False, **kwargs):
         '''
         calculate loss of est_out given gt_out.
         '''
         render_loss, extra_output = self.render_loss(pred_data, gt_data, start_deform=start_deform, **kwargs)
+        # render_loss, extra_output = self.render_loss(pred_data, gt_data, kl_div, start_deform=start_deform, **kwargs)
         return render_loss, extra_output

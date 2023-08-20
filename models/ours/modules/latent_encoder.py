@@ -98,14 +98,14 @@ class Latent_Embedding(nn.Module):
         interplated = F.normalize(interplated, p=2, dim=-1)
         return interplated
 
-    def sample_latent(self):
+    def sample_latent(self, mode_weights):
         '''sample a latent code on latent sphere'''
         '''sample weights'''
-        mode_weights = torch.randn(1, self.cfg.config.data.n_modes, device=self.device)
+        # mode_weights = torch.randn(1, self.cfg.config.data.n_modes, device=self.device)
         mode_weights = mode_weights.softmax(dim=-1)
 
         '''Sample main modes'''
-        latent_z = torch.mm(mode_weights, self.main_modes)
+        latent_z = torch.mm(mode_weights.unsqueeze(dim=0), self.main_modes)
         latent_z = F.normalize(latent_z, p=2, dim=-1)
         return latent_z.unsqueeze(1)
 

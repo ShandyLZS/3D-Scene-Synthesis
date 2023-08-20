@@ -35,17 +35,25 @@ class ThreedFutureDataset(object):
 
     def _filter_objects_by_label(self, label, generic_mapping):
         return [oi for oi in self.objects if oi.label in generic_mapping and generic_mapping[oi.label] == label]
+    
+    def _filter_objects_by_jid(self, jid):
+        return [oi for oi in self.objects if oi.model_jid == jid]
 
-    def get_closest_furniture_to_box(self, query_label, query_vertices, generic_mapping):
+    def get_closest_furniture_to_box(self, query_label, query_vertices, generic_mapping, device):
+        with torch.cuda.device(device):
+            torch.cuda.empty_cache()
+
         objects = self._filter_objects_by_label(query_label, generic_mapping)
 
         assert len(objects)
 
         query_vertices = query_vertices/ (query_vertices.max() * 2)
 
+        # 90 degree around y axis
         per_rot_mat = np.array([[0, 0, 1], [0, 1, 0], [-1, 0, 0]])
 
-        all_key_vertices = []
+        # empty np array to save all vertices
+        all_key_vertices = np.zeros(shape=(len(objects), 5000, 3)) # num_objs, num_verticecs, xyz
         valid_objects = []
         for i, oi in enumerate(objects):
             vertice_path = Path(os.path.join('./temp/3D_Future_vertices', oi.model_jid + '.npy'))
@@ -69,20 +77,25 @@ class ThreedFutureDataset(object):
 
             key_vertices = key_vertices / (key_vertices.max() * 2)
 
-            all_key_vertices.append(key_vertices)
+            # all_key_vertices.append(key_vertices)
+            all_key_vertices[i] = key_vertices
             valid_objects.append(oi)
 
-        all_key_vertices = np.array(all_key_vertices)
+        # all_key_vertices = np.array(all_key_vertices)
+        all_key_vertices = torch.from_numpy(all_key_vertices).to(device).float()
+        per_rot_mat_t = torch.from_numpy(per_rot_mat).to(device).float()
 
         all_key_vertices_w_rot = [all_key_vertices]
         for i in range(3):
-            all_key_vertices_w_rot.append(all_key_vertices_w_rot[-1].dot(per_rot_mat))
+            # all_key_vertices_w_rot.append(all_key_vertices_w_rot[-1].dot(per_rot_mat))
+            all_key_vertices_w_rot.append(torch.matmul(all_key_vertices_w_rot[-1], per_rot_mat_t))
 
         # 4 x n_objs
-        all_key_vertices_w_rot = torch.from_numpy(np.array(all_key_vertices_w_rot)).cuda().float()
-        all_key_vertices_w_rot = all_key_vertices_w_rot.flatten(0, 1)
+        # all_key_vertices_w_rot = torch.from_numpy(np.array(all_key_vertices_w_rot)).to(device).float()
+        all_key_vertices_w_rot = torch.cat(all_key_vertices_w_rot, dim=0)
+        # all_key_vertices_w_rot = all_key_vertices_w_rot.flatten(0, 1)
 
-        query_vertices = torch.from_numpy(query_vertices)[None].expand(all_key_vertices_w_rot.size(0), -1, -1).cuda().float()
+        query_vertices = torch.from_numpy(query_vertices)[None].expand(all_key_vertices_w_rot.size(0), -1, -1).to(device).float()
 
         cham_dist, cham_normals = chamfer_distance(query_vertices, all_key_vertices_w_rot, batch_reduction=None,
                                                    point_reduction='mean', norm=1)

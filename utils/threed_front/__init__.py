@@ -26,6 +26,7 @@ class Threed_Front_Config(Data_Process_Config):
         if not self.split_root.is_dir():
             self.split_root.mkdir()
         self.split_path_dir = {room_type: self.split_root.joinpath('%s_threed_front_splits.json' % (room_type)) for room_type in self.room_types}
+        self.model_mapping_path = self.split_root.joinpath('threed_front_inst_model_mapping.json')
         self.split_path_dir['all'] = self.split_root.joinpath('all_samples.json')
         self.cam_K = np.load(self.threed_front_rendering_dir.joinpath('cam_K.npy'))
         self.image_size = self.cam_K[:2, 2] * 2 + 1

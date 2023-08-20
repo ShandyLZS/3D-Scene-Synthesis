@@ -266,4 +266,5 @@ class Proj2Img(nn.Module):
                 'in_frustum': in_frustum,
                 'classes_completeness': classes_completeness,
                 'silhouettes': silhouettes,
-                'obj_ids': obj_ids}
+                'obj_ids': obj_ids,
+                'meshes': meshes}

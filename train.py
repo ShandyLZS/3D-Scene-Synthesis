@@ -61,7 +61,7 @@ class Train(object):
         # put logger where it belongs
         if self.is_master and cfg.config.log.if_wandb:
             cfg.info('Loading wandb.')
-            wandb.init(project=cfg.config.method, name=cfg.config.exp_name, config=cfg.config)
+            wandb.init(project=cfg.config.method, name=cfg.config.exp_name)
             # wandb.watch(self.net)
 
     def log_wandb(self, loss, phase):
@@ -90,7 +90,8 @@ class Train(object):
         if self.cfg.config.distributed.num_gpus > 1:
             dataloader.batch_sampler.sampler.set_epoch(epoch)
 
-        torch.cuda.empty_cache()
+        with torch.cuda.device(torch.cuda.current_device()):
+            torch.cuda.empty_cache()
         batch_start = time()
         for iter, data in enumerate(dataloader):
             # measure data loading time

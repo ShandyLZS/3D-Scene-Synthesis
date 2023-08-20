@@ -102,7 +102,9 @@ if __name__ == '__main__':
 
     '''load gt and pred data'''
     pred_file = Path(args.dump_dir).joinpath(args.sample_name + '.npz')
-    room_type = args.sample_name.split('_')[0]
+    # room_type = args.sample_name.split('_')[0]
+    room_type = 'bed'
+    print(str(room_type))
     dataset_config.init_generic_categories_by_room_type(room_type)
 
     '''read pred data'''

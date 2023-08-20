@@ -3,7 +3,8 @@
 import hydra
 import os
 import logging
-
+import sys
+sys.path.append("/home/zishan/project/ScenePiors/ScenePriors")
 def single_proc_run(config):
     from configs.config_utils import CONFIG
     from net_utils.distributed import initiate_environment
@@ -40,7 +41,7 @@ def main(config):
     logging.info('Initialize device environments')
 
     if config.distributed.num_gpus > 1:
-        multi_proc_run(config.distributed.num_gpus, fun=single_proc_run, fun_args=(config,))
+        multi_proc_run(config.distributed.available_gpus, fun=single_proc_run, fun_args=(config,))
     else:
         single_proc_run(config)
 

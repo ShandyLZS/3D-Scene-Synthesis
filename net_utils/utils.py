@@ -207,7 +207,11 @@ def load_device(cfg):
     '''
     if cfg.config.device.use_gpu and torch.cuda.is_available():
         cfg.info('GPU mode is on.')
-        return torch.device("cuda:" + str(cfg.available_gpus[0]))
+        if cfg.config.distributed.num_gpus > 1:
+            return torch.device(torch.cuda.current_device())
+        else:
+            torch.cuda.set_device(cfg.available_gpus[0])
+            return torch.device("cuda:" + str(cfg.available_gpus[0]))
     else:
         cfg.info('CPU mode is on.')
         return torch.device("cpu")

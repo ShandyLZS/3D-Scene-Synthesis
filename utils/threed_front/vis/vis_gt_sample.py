@@ -2,6 +2,8 @@
 #  License: MIT
 import h5py
 import argparse
+import sys
+sys.path.append('./')
 from utils.threed_front import Threed_Front_Config
 from utils.threed_front.vis.vis_classes import VIS_3DFRONT_2D, VIS_3DFRONT_SAMPLE
 from utils.threed_front.tools.utils import project_insts_to_2d
