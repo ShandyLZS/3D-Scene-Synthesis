@@ -7,6 +7,7 @@ from .transformer import AutoregressiveTransformer
 from .box_decoder import BoxDecoder
 from .shape_decoder import ShapeDecoder
 from .render import Proj2Img
+from .diffusion import DiffusionModel
 
 __all__ = ['Generator', 'VAD', 'Latent_Encoder', 'Latent_Embedding', 'AutoregressiveTransformer', 'Proj2Img',
-           'BoxDecoder', 'ShapeDecoder']
+           'BoxDecoder', 'ShapeDecoder','DiffusionModel']
