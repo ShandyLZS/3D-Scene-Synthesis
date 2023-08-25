@@ -18,6 +18,7 @@ class Tester(BaseTester, Trainer):
         super(Tester, self).__init__(cfg, net, device)
         self.latent_input = net['latent_input']
         self.generator = net['generator']
+        self.z_dim = cfg.config.data.z_dim
 
     def get_metric_values(self, est_data, gt_data):
         ''' Performs a evaluation step.
@@ -40,7 +41,8 @@ class Tester(BaseTester, Trainer):
 
     def generate(self, room_type_idx, mode_weights, start_deform=False):
         '''network forwarding'''
-        latent_z = self.latent_input.module.sample_latent(mode_weights)
+        # latent_z = self.latent_input.module.sample_latent(mode_weights)
+        latent_z = torch.randn([1, 1, self.z_dim]).to(self.device)
         est_data = self.generator.module.generate(latent_z, {'room_type_idx': room_type_idx}, start_deform=start_deform, self_end=True,
                                                   output_render=False)
         return est_data

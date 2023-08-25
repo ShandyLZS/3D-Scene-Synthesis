@@ -162,8 +162,7 @@ class MultiViewRenderLoss(BaseLoss):
         cam_Ks = gt_data['cam_K']
         cam_Ts = gt_data['cam_T']
         image_size = gt_data['image_size']
-        gt_jids_ndx = gt_data['jids_ndx']
-        gt_jids_ndx = gt_jids_ndx[:, 0, :].reshape(-1)
+        
 
         gt_cls = gt_box2ds[..., 4:]
         gt_labels = gt_cls.argmax(dim=-1).max(dim=1)[0]
@@ -232,6 +231,12 @@ class MultiViewRenderLoss(BaseLoss):
         box_loss = self.get_obj_weighted_loss(box_loss, view_mask)
 
         if start_deform:
+            '''
+            prepare gt jid data
+            '''
+            gt_jids_ndx = gt_data['jids_ndx']
+            gt_jids_ndx = gt_jids_ndx[:, 0, :].reshape(-1)
+            
             '''mask loss'''
             # indicates the maximal object number in a batch.
             max_gt_obj_len = max(obj_lens)
@@ -383,8 +388,8 @@ class MultiViewRenderLoss(BaseLoss):
         return CD_value
     
 
-    def __call__(self, est_data, gt_data, start_deform=False, return_matching=False, if_mask_loss=True, **kwargs):
-        # def __call__(self, est_data, gt_data, kl_div, start_deform=False, return_matching=False, if_mask_loss=True, **kwargs):
+    # def __call__(self, est_data, gt_data, start_deform=False, return_matching=False, if_mask_loss=True, **kwargs):
+    def __call__(self, est_data, gt_data, kl_div, epoch, start_deform=False, return_matching=False, if_mask_loss=True, **kwargs):
         '''Calculate rendering loss'''
         view_losses, extra_output = self.views_loss(est_data, gt_data, start_deform,
                                                     return_matching=return_matching)
@@ -401,10 +406,13 @@ class MultiViewRenderLoss(BaseLoss):
             completeness_loss = completeness_loss * (self.cfg.config['test'].n_views_for_finetune != 1)
         elif self.cfg.config.mode == 'demo':
             completeness_loss = completeness_loss * (self.cfg.config.data.n_views != 1)
-
+        # if epoch < 400:
+        #     kl_weight = 0.01
+        # else:
+        #     kl_weight = 0.1
         total_loss = view_losses['frustum_loss'] + view_losses['box_cls_loss'] + 5 * view_losses['box_loss'] + completeness_loss
-        # total_loss = view_losses['frustum_loss'] + view_losses['box_cls_loss'] + 5 * view_losses['box_loss'] + completeness_loss +kl_div
-
+        # total_loss = view_losses['frustum_loss'] + view_losses['box_cls_loss'] + 5 * view_losses['box_loss'] + completeness_loss + kl_weight * kl_div
+         # total_loss = completeness_loss + kl_div
         if start_deform:
             mask_loss = view_losses['mask_loss']
             edge_loss = view_losses['edge_loss']
@@ -415,4 +423,5 @@ class MultiViewRenderLoss(BaseLoss):
             total_loss = total_loss + 3 * mask_loss + 0.1 * edge_loss + chamfer_dist
 
         return {'total': total_loss * self.weight, **view_losses,
-                'completeness_loss': completeness_loss}, extra_output
+                'completeness_loss': completeness_loss,
+                'kl_divergence':kl_div}, extra_output

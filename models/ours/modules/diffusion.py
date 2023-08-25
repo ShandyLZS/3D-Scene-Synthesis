@@ -3,6 +3,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
 from models.registers import MODULES
+from external.fast_transformers.fast_transformers.builders import TransformerEncoderBuilder
 
 @MODULES.register_module
 class DiffusionModel(nn.Module):
@@ -31,7 +32,7 @@ class DiffusionModel(nn.Module):
         # Build encoder and decoder
         self.PointNet_encoder = PointNetEncoder(self.z_dim, self.input_dim)
         self.diffusion = DiffusionPoint(
-            net = PointwiseNet(point_dim=1, context_dim=self.z_dim, max_obj_num=self.max_obj_num, residual=cfg.config.model_param.residual),
+            net = PointwiseNet(point_dim=1, context_dim=2*self.z_dim, max_obj_num=self.max_obj_num, residual=cfg.config.model_param.residual),
             var_sched = VarianceSchedule(
                 num_steps=cfg.config.model_param.num_steps,
                 beta_1=cfg.config.model_param.beta_1,
@@ -39,7 +40,38 @@ class DiffusionModel(nn.Module):
                 mode='linear'
             )
         )
-        
+
+         # Build a transformer encoder
+        d_model = 512
+        n_head = 4
+        self.transformer_encoder = TransformerEncoderBuilder.from_kwargs(
+            n_layers=1,
+            n_heads=n_head,
+            query_dimensions=d_model // n_head,
+            value_dimensions=d_model // n_head,
+            feed_forward_dimensions=d_model,
+            attention_type="full",
+            activation="gelu",
+        ).get()
+
+        self.z_mu_encoders = nn.Sequential(nn.Linear(self.z_dim, self.z_dim), 
+                                            nn.ReLU(), 
+                                            nn.Linear(self.z_dim, self.z_dim), 
+                                            nn.ReLU()
+                                            )
+                                                     
+
+        self.z_sigma_encoders = nn.Sequential(nn.Linear(self.z_dim, self.z_dim), 
+                                               nn.ReLU(), 
+                                               nn.Linear(self.z_dim, self.z_dim), 
+                                               nn.ReLU()
+                                               ) 
+
+        self.decoders = nn.ModuleList([nn.Sequential(nn.Linear(self.z_dim, self.z_dim), nn.ReLU(), 
+                                                     nn.Linear(self.z_dim, self.z_dim), nn.ReLU()
+                                                     ) for _ in range(self.max_obj_num)])
+
+
         self.mlp_bbox = nn.Sequential(
             nn.Linear(512, 512), nn.ReLU(),
             nn.Linear(512, self.inst_latent_len))
@@ -53,25 +85,29 @@ class DiffusionModel(nn.Module):
         eps = torch.randn(std.size(), device = self.device) + mean
         return mean + std * eps
 
-    def forward(self, latent_z, max_len, room_type_idx):
-        X = self.empty_token_embedding(room_type_idx[:, 0])[:, None]
-
-        z_mu, z_sigma = self.PointNet_encoder(X)
+    def forward(self, max_len, room_type_idx):
+        token = self.empty_token_embedding(room_type_idx[:, 0])[:, None]
+        X = self.transformer_encoder(token, length_mask=None)
+        z_mu = self.z_mu_encoders(X)
+        z_sigma = self.z_sigma_encoders(X)
+        # z_mu, z_sigma = self.PointNet_encoder(X)
         latent_z = self.reparameterize_gaussian(mean=z_mu, logvar=z_sigma)  # (B, F)
+        scene_feats = torch.cat((token, latent_z),dim=2)
+        obj_feat = self.diffusion.sample(scene_feats, self.max_obj_num).transpose(1, 2)
+        obj_feats = []
+        for idx in range(self.max_obj_num):
+            obj_feats.append(self.decoders[idx](obj_feat[:, idx]).unsqueeze(dim=1))
 
-        obj_feats = self.diffusion.sample(latent_z, self.max_obj_num)
-            
-
-        obj_feats = obj_feats.transpose(1, 2)[:, :max_len]
+        obj_feats = torch.cat(obj_feats[1:], dim=1)[:, :max_len]
         box_feat = self.mlp_bbox(obj_feats)
         completenesss_feat = self.mlp_comp(obj_feats)
 
-        log_pz = self.standard_normal_logprob(latent_z).sum(dim=1)  # (B, ), Independence assumption
-        entropy = self.gaussian_entropy(logvar=z_sigma)      # (B, )
-        loss_prior = (- log_pz - entropy).mean()
-
-        return box_feat, completenesss_feat
-        # return box_feat, completenesss_feat, loss_prior
+        # log_pz = self.standard_normal_logprob(latent_z).sum(dim=1)  # (B, ), Independence assumption
+        # entropy = self.gaussian_entropy(logvar=z_sigma)      # (B, )
+        # loss_prior = (- log_pz - entropy).mean()
+        loss_prior = (-0.5 * torch.sum(1 + z_sigma - torch.square(z_mu) - torch.square(torch.exp(z_sigma))))/z_sigma.size(0)
+        # return box_feat, completenesss_feat
+        return box_feat, completenesss_feat, loss_prior
     
 
     def gaussian_entropy(self, logvar):
@@ -92,21 +128,25 @@ class DiffusionModel(nn.Module):
             self_end = True
 
         assert self_end != (pred_gt_matching is not None)
+        token = self.empty_token_embedding(room_type_idx[:, 0])[:, None]
 
         n_batch = latent_codes.size(0)
         output_feats = []
         for batch_id in range(n_batch):
             latent_z = latent_codes[[batch_id]]
+            scene_feats = torch.cat((token, latent_z),dim=2)
 
-            obj_feats = self.diffusion.sample(latent_z, self.max_obj_num)  
+            obj_feat = self.diffusion.sample(scene_feats, self.max_obj_num).transpose(1, 2)
+            obj_feats = []
             for idx in range(self.max_obj_num):  
-                last_feat = obj_feats[:, idx]
+                last_feat = self.decoders[idx](obj_feat[:, idx]).unsqueeze(dim=1)
+                obj_feats.append(last_feat)
                 if self_end:
                     completeness = self.mlp_comp(last_feat).sigmoid()
                     if completeness > threshold:
                         break
 
-            obj_feats = obj_feats[:, :idx]
+            obj_feats = torch.cat(obj_feats[1:], dim=1)[:, :idx]
             box_feat = self.mlp_bbox(obj_feats)
 
             if pred_gt_matching is not None:
@@ -216,36 +256,7 @@ class DiffusionPoint(nn.Module):
 
     def sample(self, context, max_obj_num, flexibility=0.0, ret_traj=False):
         batch_size = context.size(0)
-        latent_dim = context.size(1)
-        x_T = torch.randn([batch_size, latent_dim, max_obj_num]).to(context.device)
-        traj = {self.var_sched.num_steps: x_T}
-        for t in range(self.var_sched.num_steps, 0, -1):
-            z = torch.randn_like(x_T) if t > 1 else torch.zeros_like(x_T)
-            alpha = self.var_sched.alphas[t]
-            alpha_bar = self.var_sched.alpha_bars[t]
-            sigma = self.var_sched.get_sigmas(t, flexibility)
-
-            c0 = 1.0 / torch.sqrt(alpha)
-            c1 = (1 - alpha) / torch.sqrt(1 - alpha_bar)
-
-            x_t = traj[t]
-            beta = self.var_sched.betas[[t]*batch_size]
-            e_theta = self.net(x_t, beta=beta, context=context)
-            x_next = c0 * (x_t - c1 * e_theta) + sigma * z
-            traj[t-1] = x_next.detach()     # Stop gradient and save trajectory.
-            traj[t] = traj[t].cpu()         # Move previous output to CPU memory.
-            if not ret_traj:
-                del traj[t]
-        
-        if ret_traj:
-            return traj
-        else:
-            return traj[0]
-        
-
-    def sample(self, context, max_obj_num, flexibility=0.0, ret_traj=False):
-        batch_size = context.size(0)
-        latent_dim = context.size(1)
+        latent_dim = 512
         x_T = torch.randn([batch_size, latent_dim, max_obj_num]).to(context.device)
         traj = {self.var_sched.num_steps: x_T}
         for t in range(self.var_sched.num_steps, 0, -1):

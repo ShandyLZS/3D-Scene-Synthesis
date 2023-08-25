@@ -35,7 +35,7 @@ class Trainer(BaseTrainer):
         loss_dict = {k: v.item() for k, v in loss_reduced.items()}
         return loss_dict
 
-    def train_step(self, data, stage='all', start_deform=False, **kwargs):
+    def train_step(self, data, epoch, stage='all', start_deform=False, **kwargs):
         '''
         performs a step training
         :param data (dict): data dictionary
@@ -51,7 +51,7 @@ class Trainer(BaseTrainer):
         for net_type in net_types:
             self.optimizer[net_type].zero_grad()
 
-        loss, extra_output = self.compute_loss(data, start_deform=start_deform, **kwargs)
+        loss, extra_output = self.compute_loss(data, epoch, start_deform=start_deform, **kwargs)
 
         if loss['total'].requires_grad:
             loss['total'].backward()
@@ -79,7 +79,7 @@ class Trainer(BaseTrainer):
             data[key] = data[key].to(device)
         return data
 
-    def compute_loss(self, data, start_deform=False, **kwargs):
+    def compute_loss(self, data, epoch, start_deform=False, **kwargs):
         '''
         compute the overall loss.
         :param data (dict): data dictionary
@@ -89,11 +89,11 @@ class Trainer(BaseTrainer):
         data = self.to_device(data)
 
         '''network forwarding'''
-        latent_z = self.latent_input(data)
-        est_data = self.generator(latent_z, data, start_deform=start_deform, **kwargs)
-        # est_data, kl_div = self.generator(latent_z, data, start_deform=start_deform, **kwargs)
+        # latent_z = self.latent_input(data)
+        # est_data = self.generator(latent_z, data, start_deform=start_deform, **kwargs)
+        est_data, kl_div = self.generator(data, start_deform=start_deform, **kwargs)
 
         '''compute losses'''
-        loss, extra_output = self.generator.module.loss(est_data, data, start_deform=start_deform, **kwargs)
-        # loss, extra_output = self.generator.module.loss(est_data, data, kl_div, start_deform=start_deform, **kwargs)
+        # loss, extra_output = self.generator.module.loss(est_data, data, start_deform=start_deform, **kwargs)
+        loss, extra_output = self.generator.module.loss(est_data, data, kl_div, epoch, start_deform=start_deform, **kwargs)
         return loss, extra_output

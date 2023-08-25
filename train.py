@@ -97,7 +97,7 @@ class Train(object):
             # measure data loading time
             dataload_timemeter.update(time() - batch_start)
 
-            loss, extra_output = self.subtrainer.train_step(data, stage, start_deform=self.cfg.config.start_deform)
+            loss, extra_output = self.subtrainer.train_step(data, epoch, stage, start_deform=self.cfg.config.start_deform)
 
             # visualize intermediate results.
             if (iter % self.cfg.config.log.vis_step) == 0:
