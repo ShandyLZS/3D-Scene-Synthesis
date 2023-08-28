@@ -4,6 +4,7 @@ import torch.nn.functional as F
 import numpy as np
 from models.registers import MODULES
 from external.fast_transformers.fast_transformers.builders import TransformerEncoderBuilder
+from .flow import *
 
 @MODULES.register_module
 class DiffusionModel(nn.Module):
@@ -31,6 +32,7 @@ class DiffusionModel(nn.Module):
 
         # Build encoder and decoder
         self.PointNet_encoder = PointNetEncoder(self.z_dim, self.input_dim)
+        self.flow = build_latent_flow(cfg)
         self.diffusion = DiffusionPoint(
             net = PointwiseNet(point_dim=1, context_dim=2*self.z_dim, max_obj_num=self.max_obj_num, residual=cfg.config.model_param.residual),
             var_sched = VarianceSchedule(
@@ -86,12 +88,21 @@ class DiffusionModel(nn.Module):
         return mean + std * eps
 
     def forward(self, max_len, room_type_idx):
+        batch_size = room_type_idx.size(0)
+
         token = self.empty_token_embedding(room_type_idx[:, 0])[:, None]
         X = self.transformer_encoder(token, length_mask=None)
         z_mu = self.z_mu_encoders(X)
         z_sigma = self.z_sigma_encoders(X)
         # z_mu, z_sigma = self.PointNet_encoder(X)
         latent_z = self.reparameterize_gaussian(mean=z_mu, logvar=z_sigma)  # (B, F)
+
+        # P(z), Prior probability, parameterized by the flow: z -> w.
+        w, delta_log_pw = self.flow(latent_z.squeeze(), torch.zeros([batch_size, 1]).to(latent_z), reverse=False)
+        log_pw = self.standard_normal_logprob(w).view(batch_size, -1).sum(dim=1, keepdim=True)   # (B, 1)
+        log_pz = log_pw - delta_log_pw.view(batch_size, 1)  # (B, 1)
+
+
         scene_feats = torch.cat((token, latent_z),dim=2)
         obj_feat = self.diffusion.sample(scene_feats, self.max_obj_num).transpose(1, 2)
         obj_feats = []
@@ -105,9 +116,12 @@ class DiffusionModel(nn.Module):
         # log_pz = self.standard_normal_logprob(latent_z).sum(dim=1)  # (B, ), Independence assumption
         # entropy = self.gaussian_entropy(logvar=z_sigma)      # (B, )
         # loss_prior = (- log_pz - entropy).mean()
-        loss_prior = (-0.5 * torch.sum(1 + z_sigma - torch.square(z_mu) - torch.square(torch.exp(z_sigma))))/z_sigma.size(0)
+        loss_entropy = (-0.5 * torch.sum(1 + z_sigma - torch.square(z_mu) - torch.square(torch.exp(z_sigma))))/z_sigma.size(0)
+        loss_prior = -log_pz.mean()
+        loss = loss_entropy + loss_prior
+
         # return box_feat, completenesss_feat
-        return box_feat, completenesss_feat, loss_prior
+        return box_feat, completenesss_feat, loss
     
 
     def gaussian_entropy(self, logvar):
@@ -128,12 +142,17 @@ class DiffusionModel(nn.Module):
             self_end = True
 
         assert self_end != (pred_gt_matching is not None)
+
+
         token = self.empty_token_embedding(room_type_idx[:, 0])[:, None]
+        
 
         n_batch = latent_codes.size(0)
+        z = self.flow(latent_codes, reverse=True).view(n_batch, -1)
+
         output_feats = []
         for batch_id in range(n_batch):
-            latent_z = latent_codes[[batch_id]]
+            latent_z = z[[batch_id]]
             scene_feats = torch.cat((token, latent_z),dim=2)
 
             obj_feat = self.diffusion.sample(scene_feats, self.max_obj_num).transpose(1, 2)
