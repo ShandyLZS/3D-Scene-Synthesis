@@ -135,7 +135,7 @@ class Generator(BaseNetwork):
 
         return outputs
 
-    def forward(self, data, start_deform=False, **kwargs):
+    def forward(self, latent_z, data, start_deform=False, **kwargs):
         '''
         Forward pass of the network
         :param data (dict): contains the data for training.
@@ -147,7 +147,7 @@ class Generator(BaseNetwork):
         else:
             max_len = data['max_len'].max()
         # backbone_feat, completeness_score = self.backbone(latent_z, max_len, data['room_type_idx'])
-        backbone_feat, completeness_score, kl_div = self.backbone(max_len, data['room_type_idx'])
+        backbone_feat, completeness_score, kl_div = self.backbone(latent_z, data, max_len, data['room_type_idx'], start_deform=False)
 
         box3ds = self.box_gen(backbone_feat, completeness_score)
 

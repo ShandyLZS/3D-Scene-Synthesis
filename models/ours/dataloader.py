@@ -231,12 +231,20 @@ class THREEDFRONT(Base_Dataset):
         parsed_data = self.track_insts(parsed_data, unique_marks, self.cfg.model_mapping)
 
         keywords = ['sample_name', 'cam_K', 'image_size', 'cam_T', 'box2ds_tr', 'inst_marks']
+        # cam_K: cam intrinsic matrix
+        # cam_T: cam extrinsic matrix
+        # image_size: render image size
+        # inst_marks: list of bool value, marking which object exists
 
         if self.cfg.config.start_deform:
             keywords.append('masks_tr')
             keywords.append('jids_ndx')
             if self.cfg.config.data.dataset == 'ScanNet':
                 keywords.append('render_mask_tr')
+
+        # Modification for feature extracting
+        self.downsample_ratio = 1
+        keywords.append('masks_tr') # Segmentation image 480 x 360 or transposed, -1 for background, 0-n for each object
 
         views_data = []
         for parsed_view in parsed_data:

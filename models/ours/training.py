@@ -89,9 +89,9 @@ class Trainer(BaseTrainer):
         data = self.to_device(data)
 
         '''network forwarding'''
-        # latent_z = self.latent_input(data)
+        latent_z = self.latent_input(data)
         # est_data = self.generator(latent_z, data, start_deform=start_deform, **kwargs)
-        est_data, kl_div = self.generator(data, start_deform=start_deform, **kwargs)
+        est_data, kl_div = self.generator(latent_z, data, start_deform=start_deform, **kwargs)
 
         '''compute losses'''
         # loss, extra_output = self.generator.module.loss(est_data, data, start_deform=start_deform, **kwargs)

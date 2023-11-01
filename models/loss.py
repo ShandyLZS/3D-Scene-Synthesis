@@ -4,7 +4,7 @@ import numpy as np
 from scipy import stats
 import trimesh
 import torch
-from torch.nn import L1Loss, CrossEntropyLoss, BCEWithLogitsLoss, CosineSimilarity, BCELoss
+from torch.nn import L1Loss, CrossEntropyLoss, BCEWithLogitsLoss, CosineSimilarity, BCELoss, MaxPool2d
 import torch.distributions as dist
 from models.registers import LOSSES
 from net_utils.matcher_tracking import HungarianMatcher
@@ -16,6 +16,7 @@ from utils.threed_front.tools.threed_future_dataset import ThreedFutureDataset
 import pytorch3d.loss.mesh_edge_loss as mesh_edge_loss
 from pytorch3d.loss import chamfer_distance
 from pathlib import Path
+import matplotlib.pyplot as plt
 
 class BaseLoss(object):
     '''base loss class'''
@@ -76,6 +77,7 @@ class MultiViewRenderLoss(BaseLoss):
         self.model_dataset = ThreedFutureDataset.from_pickled_dataset(
             self.dataset_config.root_path.joinpath(
             'pickled_threed_future_model_%s.pkl' % (cfg.room_type)))
+        self.pooling = MaxPool2d(cfg.config.data.downsample_ratio)
 
     def _get_src_permutation_idx(self, indices):
         # permute predictions following indices
@@ -247,7 +249,8 @@ class MultiViewRenderLoss(BaseLoss):
                 [(gt_data['masks_tr'] == obj_id).unsqueeze(1) for obj_id in range(max_gt_obj_len)], dim=1)
 
             # mask loss
-            gt_inst_masks = gt_inst_masks[batch_gt_idx]
+            gt_inst_masks = self.pooling(gt_inst_masks[batch_gt_idx].float()).bool()
+            
             # get iou between est and gt masks
             est_inst_masks_indexed = est_inst_masks[batch_pred_idx]
             ious = self.mask_iou(est_inst_masks_indexed, gt_inst_masks)
@@ -271,7 +274,7 @@ class MultiViewRenderLoss(BaseLoss):
             pred_meshes_verts = pred_meshes_verts[mesh_pred_idx]
             # pred_meshes_faces = pred_meshes_faces[mesh_pred_idx]
             gt_jid_list = [self.cfg.model_jid_list[jid_ndx] for jid_ndx in gt_jids_ndx[mesh_gt_idx]]
-            #chamfer_distance = self.CD_retrieval(pred_meshes_verts, gt_jid_list, device=self.device)
+            # chamfer_dist = torch.tensor(0., device=self.device)
             chamfer_dist = self.CD_retrieval_parallel(pred_meshes_verts, gt_jid_list, device=self.device)
         else:
             mask_loss = torch.tensor(0., device=self.device)
@@ -284,7 +287,8 @@ class MultiViewRenderLoss(BaseLoss):
                   'box_loss': box_loss,
                   'mask_loss': mask_loss,
                   'edge_loss': edge_loss,
-                  'chamfer_dist': chamfer_dist,}
+                  'chamfer_dist': chamfer_dist,
+                  }
 
         extra_output = {}
         if return_matching:
@@ -387,6 +391,16 @@ class MultiViewRenderLoss(BaseLoss):
 
         return CD_value
     
+    def annealing_schedule(self, t, T=800):
+        M = 4 # number of cycles
+        R = 0.5 # proportion used to increase kl_weight within a cycle
+        # T = 1000  total number of iterations
+        T = T + 50
+        tao = t % int(T/M) / (T/M)
+        if tao <= R:
+            return torch.tensor(tao).to(self.device)/20
+        else:
+            return torch.ones((1)).to(self.device)/20
 
     # def __call__(self, est_data, gt_data, start_deform=False, return_matching=False, if_mask_loss=True, **kwargs):
     def __call__(self, est_data, gt_data, kl_div, epoch, start_deform=False, return_matching=False, if_mask_loss=True, **kwargs):
@@ -406,13 +420,10 @@ class MultiViewRenderLoss(BaseLoss):
             completeness_loss = completeness_loss * (self.cfg.config['test'].n_views_for_finetune != 1)
         elif self.cfg.config.mode == 'demo':
             completeness_loss = completeness_loss * (self.cfg.config.data.n_views != 1)
-        # if epoch < 400:
-        #     kl_weight = 0.01
-        # else:
-        #     kl_weight = 0.1
-        total_loss = view_losses['frustum_loss'] + view_losses['box_cls_loss'] + 5 * view_losses['box_loss'] + completeness_loss
-        # total_loss = view_losses['frustum_loss'] + view_losses['box_cls_loss'] + 5 * view_losses['box_loss'] + completeness_loss + kl_weight * kl_div
-         # total_loss = completeness_loss + kl_div
+
+        # total_loss = view_losses['frustum_loss'] + view_losses['box_cls_loss'] + 5 * view_losses['box_loss'] + completeness_loss
+        kl_weight = self.annealing_schedule(epoch, T=600)
+        total_loss = view_losses['frustum_loss'] + view_losses['box_cls_loss'] + 5 * view_losses['box_loss'] + completeness_loss + kl_weight * kl_div
         if start_deform:
             mask_loss = view_losses['mask_loss']
             edge_loss = view_losses['edge_loss']

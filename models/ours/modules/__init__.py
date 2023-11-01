@@ -9,6 +9,7 @@ from .shape_decoder import ShapeDecoder
 from .render import Proj2Img
 from .diffusion import DiffusionModel
 from .flow import build_latent_flow
+from .extraction import conv_net
 
 __all__ = ['Generator', 'VAD', 'Latent_Encoder', 'Latent_Embedding', 'AutoregressiveTransformer', 'Proj2Img',
-           'BoxDecoder', 'ShapeDecoder','DiffusionModel', 'build_latent_flow']
+           'BoxDecoder', 'ShapeDecoder','DiffusionModel', 'build_latent_flow', 'conv_net']

@@ -1,5 +1,3 @@
-#  Copyright (c) 9.2022. Yinyu Nie
-#  License: MIT
 import os
 # Env variable for server side
 os.environ['DISPLAY']=':96.0'
@@ -16,8 +14,6 @@ from utils.vis_base import VIS_BASE
 import seaborn as sns
 from utils.threed_front.tools.threed_future_dataset import ThreedFutureDataset
 import torch
-from vtkmodules.vtkFiltersSources import vtkPlaneSource
-from vtkmodules.vtkRenderingCore import vtkActor, vtkPolyDataMapper
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Visualize a 3D-FRONT gt sample.")
@@ -30,9 +26,9 @@ def parse_args():
     parser.add_argument('--path_to_pickled_3d_futute_models', type=str, help='pickled 3d-future dir from ATISS',
                         default='datasets/3D-Front/pickled_threed_future_model_%s.pkl')
     parser.add_argument('--cam_pos', type=list, help='Camera position with 3 numbers',
-                        default=[2, 2, 2])
+                        default=[0, 6, 0])
     parser.add_argument('--device', type=int, help='setup device',
-                        default=0)
+                        default=7)
     return parser.parse_args()
 
 
@@ -52,8 +48,7 @@ class VIS_3DFRONT_RESULT(VIS_BASE):
 
         cam_loc = np.array(self.cam_pos) # np.array([3, 0, 0])
         cam_fp = np.array([0, 0, 0])
-        # cam_up = np.array([1, 0, 0])
-        cam_up = np.array([0, 1, 0])
+        cam_up = np.array([1, 0, 0])
         fov_y = (2 * np.arctan((self.cam_K[1][2] * 2 + 1) / 2. / self.cam_K[1][1])) / np.pi * 180
         camera = self.set_camera(cam_loc, cam_fp, cam_up, fov_y=fov_y)
         camera.SetParallelProjection(True)
@@ -66,21 +61,6 @@ class VIS_3DFRONT_RESULT(VIS_BASE):
             obj_actor = self.get_obj_actor(mesh_file)
             obj_actor.GetProperty().SetColor(self.cls_palette[cls_id])
             renderer.AddActor(obj_actor)
-
-        # add floor
-        planeSource = vtkPlaneSource()
-        planeSource.SetCenter(0.0, 0.0, 0.0)
-        #planeSource.SetPoint1(-2,0,-2)
-        #planeSource.SetPoint2(4,0,6)
-        planeSource.SetNormal(0.0, 1.0, 0.0)
-        planeSource.Update()
-        plane = planeSource.GetOutput()
-        mapper = vtkPolyDataMapper()
-        mapper.SetInputData(plane)
-        actor = vtkActor()
-        actor.SetMapper(mapper)
-        actor.GetProperty().SetColor(0.93333, 0.91373, 0.91373)
-        renderer.AddActor(actor)
 
         '''light'''
         positions = [(10, 10, 10), (-10, 10, 10), (10, 10, -10), (-10, 10, -10)]
@@ -107,10 +87,11 @@ def read_pred_data(pred_file, dataset_config, device, use_retrieval=False, objec
     save_mesh_dir = Path('./temp/generations/%s/%s/%s'%(room_type, 'retrieval' if args.use_retrieval else 'no_retrieval',current_time)).joinpath(pred_file.name[:-4])
     if not save_mesh_dir.exists():
         save_mesh_dir.mkdir(parents=True)
-
+    cls_ids = []
     inst_mesh_files = []
     for inst_id, (vertices, faces) in enumerate(zip(mesh_vertices, mesh_faces)):
         save_file = save_mesh_dir.joinpath('%d.obj' % inst_id)
+        cls_ids.append(category_ids[inst_id])
         if not save_file.exists():
             color = color_palette[category_ids[inst_id]]
             if use_retrieval:
@@ -118,7 +99,7 @@ def read_pred_data(pred_file, dataset_config, device, use_retrieval=False, objec
             mesh = trimesh.Trimesh(vertices=vertices, faces=faces, process=False, vertex_colors=color)
             mesh.export(save_file)
         inst_mesh_files.append(str(save_file))
-    return {'box3ds': box3ds, 'category_ids': category_ids, 'mesh_files': inst_mesh_files}
+    return {'box3ds': box3ds, 'category_ids': category_ids, 'mesh_files': inst_mesh_files, 'cls_ids': cls_ids}
 
 def retrieval_model(source_vertices, cls_id, objects_dataset, dataset_config, device):
 
@@ -158,34 +139,50 @@ def retrieval_model(source_vertices, cls_id, objects_dataset, dataset_config, de
 if __name__ == '__main__':
     args = parse_args()
     dataset_config = Threed_Front_Config()
-    pred_file = Path(args.pred_file)
-    room_type = pred_file.parent.name
-    dataset_config.init_generic_categories_by_room_type(room_type)
+    # pred_file_path = 'outputs/3D-Front/generation/2023-09-11/21-30-08/vis/bed/' # vae without cd
+    # pred_file_path = 'outputs/3D-Front/generation/2023-07-30/23-29-58/vis/bed/' # original model
+    # pred_file_path = "outputs/3D-Front/generation/2023-10-11/11-17-02/vis/bed/" # vae_ + cd 
+    pred_file_path = 'outputs/3D-Front/generation/2023-08-11/22-45-18/vis/bed/' # original +cd
+    args.use_retrieval = False
+    cls_id_list = []
+    file = open('./eva_image/pred_cls_org_cd.txt','w')
+    for file_idx in range(2000):
+        args.pred_file = pred_file_path +'sample_' + str(file_idx)+ '_0.npz'
+        pred_file = Path(args.pred_file)
+        room_type = pred_file.parent.name
+        dataset_config.init_generic_categories_by_room_type(room_type)
 
-    render_dir = pred_file.parents[1].joinpath('imgs')
+        render_dir = pred_file.parents[1].joinpath('imgs')
 
-    # Build the dataset of 3D models
-    objects_dataset = ThreedFutureDataset.from_pickled_dataset(
-        args.path_to_pickled_3d_futute_models % (room_type)
-    )
+        # Build the dataset of 3D models
+        objects_dataset = ThreedFutureDataset.from_pickled_dataset(
+            args.path_to_pickled_3d_futute_models % (room_type)
+        )
 
-    current_time = args.former_dir if args.former_dir is not None else datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
-    color_palette = np.array(sns.color_palette('hls', len(dataset_config.label_names)))
-    '''load gt and pred data'''
-    if not pred_file.exists():
-        raise FileNotFoundError('There is no such file.')
-    '''read pred data'''
-    device = args.device
-    
-    pred_data = read_pred_data(pred_file, dataset_config, device, args.use_retrieval, objects_dataset)
+        current_time = args.former_dir if args.former_dir is not None else datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
+        color_palette = np.array(sns.color_palette('hls', len(dataset_config.label_names)))
+        '''load gt and pred data'''
+        if not pred_file.exists():
+            raise FileNotFoundError('There is no such file.')
+        '''read pred data'''
+        device = args.device
 
-    if pred_data is None:
-        raise ValueError('pred_data is None.')
+        pred_data = read_pred_data(pred_file, dataset_config, device, args.use_retrieval, objects_dataset)
+        cls_id_list.append(pred_data['cls_ids'])
+        [file.write(str(x)+',') for x in pred_data['cls_ids']]
+        # file.write(str(pred_data['cls_ids'])+',')
+        # file.write(str(pred_data['cls_id'])+"\n")
 
-    '''visualize results'''
-    # vis prediction
-    cam_pos = [int(i) for i in args.cam_pos]
-    viser = VIS_3DFRONT_RESULT(category_ids=pred_data['category_ids'], class_names=dataset_config.label_names,
-                               mesh_files=pred_data['mesh_files'], cam_pos = cam_pos)
-    # target_path = str(pred_file).split('.')[0] + '_' + '_'.join(args.cam_pos) + '.jpg'
-    viser.visualize(save_path='./sample.jpeg')
+        # if pred_data is None:
+        #     raise ValueError('pred_data is None.')
+
+        # '''visualize results'''
+        # # vis prediction
+        # cam_pos = [int(i) for i in args.cam_pos]
+        # viser = VIS_3DFRONT_RESULT(category_ids=pred_data['category_ids'], class_names=dataset_config.label_names,
+        #                            mesh_files=pred_data['mesh_files'], cam_pos = cam_pos)
+        # # target_path = str(pred_file).split('.')[0] + '_' + '_'.join(args.cam_pos) + '.jpg'
+        # viser.visualize(save_path='./eva_image/pred_org_non_ret/sample_'+str(file_idx)+'_0.jpeg', offline=True)
+        # file_idx += 1
+        print('save image %d\n', file_idx)
+    file.close()

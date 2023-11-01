@@ -329,7 +329,7 @@ def read_obj2vtk_from_box(model_path, bbox3d):
     # get points from object
     polydata = vtk_object.GetOutput()
     # read points using vtk_to_numpy
-    obj_points = vtk_to_numpy(polydata.GetPoints().GetData()).astype(np.float)
+    obj_points = vtk_to_numpy(polydata.GetPoints().GetData()).astype(np.float64)
     original_center = (obj_points.max(0) + obj_points.min(0))/2.
     original_size = (obj_points.max(0) - obj_points.min(0))
     obj_points -= original_center
@@ -360,7 +360,7 @@ class VIS_3DFRONT_SAMPLE(VIS_BASE):
         renderer.ResetCamera()
 
         '''draw world system'''
-        renderer.AddActor(self.set_axes_actor())
+        # renderer.AddActor(self.set_axes_actor())
 
         view_id = kwargs['view_id'] if 'view_id' in kwargs else 0
         if 'view_id' in kwargs:
@@ -374,6 +374,8 @@ class VIS_3DFRONT_SAMPLE(VIS_BASE):
             cam_up = render_cam_R[:, 1]
             fov_y = (2 * np.arctan((self.cam_K[1][2] * 2 + 1) / 2. / self.cam_K[1][1])) / np.pi * 180
             camera = self.set_camera(cam_loc, cam_fp, cam_up, fov_y=fov_y)
+            camera.SetParallelProjection(True)
+            camera.SetParallelScale(5)
             renderer.SetActiveCamera(camera)
         else:
             cam_loc = np.array([0, 5, 0])
@@ -382,6 +384,8 @@ class VIS_3DFRONT_SAMPLE(VIS_BASE):
             cam_up = np.array([0, 0, 1])
             fov_y = (2 * np.arctan((self.cam_K[1][2] * 2 + 1) / 2. / self.cam_K[1][1])) / np.pi * 180
             camera = self.set_camera(cam_loc, cam_fp, cam_up, fov_y=fov_y)
+            camera.SetParallelProjection(True)
+            camera.SetParallelScale(5)
             renderer.SetActiveCamera(camera)
 
         '''draw camera positions'''

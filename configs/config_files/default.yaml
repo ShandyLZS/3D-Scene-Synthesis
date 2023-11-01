@@ -14,6 +14,7 @@ device:
   use_gpu: True
   num_workers: 0
 distributed:
+  available_gpus: [7]
   num_gpus: 1
   OMP_NUM_THREADS: 12
 data:
@@ -30,6 +31,14 @@ data:
     cost_class: 1
     cost_bbox: 0.1
     cost_giou: 1
+model_param:
+  input_dim: 1
+  num_steps: 100
+  beta_1: 1e-4
+  beta_T: 0.02
+  residual: True
+  latent_flow_depth: 14
+  latent_flow_hidden_dim: 512
 model:
   latent_input:
     method: VAD
@@ -41,7 +50,7 @@ model:
     method: Generator
     arch:
       backbone:
-        module: AutoregressiveTransformer
+        module: DiffusionModel # DiffusionModel or AutoregressiveTransformer
         loss: Null
       box_gen:
         module: BoxDecoder
