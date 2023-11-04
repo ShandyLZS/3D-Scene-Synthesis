@@ -54,8 +54,7 @@
                 "scheduler.latent_input.milestones=[400]",
                 "scheduler.generator.milestones=[400]",
                 "log.if_wandb=True",
-                //"exp_name=pretrain_3dfront_bedroom"
-                "exp_name=vae_annealing_schedule_expand_zdim"
+                "exp_name=vae_annealing_schedule"
             ]
         },
         {
@@ -67,12 +66,10 @@
             "justMyCode": true,
             "args": [
                 "start_deform=True",
-                "resume=True",
+                "resume=False",
                 "finetune=True",
-                // "weight=['outputs/3D-Front/train/2023-07-28/00-30-42/model_best.pth']", //original
-                // "weight=['outputs/3D-Front/train/2023-09-02/20-25-36/model_best.pth']", //vae based
-                "weight=['outputs/3D-Front/train/2023-09-10/01-03-14/model_best.pth']", //vae based change kl
-                // "weight=['outputs/3D-Front/train/2023-09-12/00-04-54/model_best.pth']", //vae based expand zdim
+                // "weight=['outputs/3D-Front/train/2023-07-28/00-30-42/model_best.pth']", //Layout pre-training result of ScenePriors
+                 "weight=['outputs/3D-Front/train/2023-09-10/01-03-14/model_best.pth']", //vae based model
                 "distributed.available_gpus=[6]",
                 "distributed.num_gpus=1",
                 "data.dataset=3D-Front",
@@ -103,21 +100,12 @@
                 "finetune=True",
                 "distributed.available_gpus=[6]",
                 "distributed.num_gpus=1",
-                //"weight=['outputs/3D-Front/train/2023-07-30/15-32-46/model_best.pth']", //original
-                //"weight=['outputs/3D-Front/train/2023-08-03/14-49-34/model_best.pth']", //with 1edge_loss
-                //"weight=['outputs/3D-Front/train/2023-08-02/19-42-00/model_best.pth']", //with 2edge_loss
-                //"weight=['outputs/3D-Front/train/2023-08-02/22-31-43/model_best.pth']", //with 0.1edge_loss
-                //"weight=['outputs/3D-Front/train/2023-08-11/15-09-37/model_best.pth']", //cd+0.1edge_loss
-                //"weight=['outputs/3D-Front/train/2023-08-14/23-17-32/model_best.pth']", //0.5cd+0.1edge_loss
-                //"weight=['outputs/3D-Front/train/2023-08-24/11-35-25/model_best.pth']",//diffusion layout
-                //"weight=['outputs/3D-Front/train/2023-08-31/23-27-31/model_best.pth']",
-                //"weight=['outputs/3D-Front/train/2023-09-02/20-25-36/model_best.pth']",
-                // "weight=['outputs/3D-Front/train/2023-09-02/20-25-36/model_best.pth']", //vae based layout
-                //"weight=['outputs/3D-Front/train/2023-07-28/00-30-42/model_best.pth']", //original layout
-                //"weight=['outputs/3D-Front/train/2023-09-08/18-38-59/model_best.pth']", //vae based without cd 150epoch
-                //"weight=['outputs/3D-Front/train/2023-09-11/10-47-33/model_best.pth']", //vae based without cd  change kl
-                //"weight=['outputs/3D-Front/train/2023-09-12/11-00-48/model_best.pth']", //vae based without cd  extend zdim
-                "weight=['outputs/3D-Front/train/2023-10-10/15-33-13/model_best.pth']", //vae based change kl
+                //"weight=['outputs/3D-Front/train/2023-07-30/15-32-46/model_best.pth']", //Shape training result of ScenePriors
+                //"weight=['outputs/3D-Front/train/2023-08-11/15-09-37/model_best.pth']", //ScenePriors shape training with Chamfer dist
+   
+                //"weight=['outputs/3D-Front/train/2023-09-11/10-47-33/model_best.pth']", //vae based shape training
+
+                "weight=['outputs/3D-Front/train/2023-10-10/15-33-13/model_best.pth']", //vae based shape training with Chamfer distance
                 "generation.room_type=bed",
                 "data.split_dir=splits",
                 "data.split_type=bed",
@@ -158,25 +146,13 @@
             "console": "integratedTerminal",
             "justMyCode": true,
             "args": [
-                //"--pred_file", "outputs/3D-Front/generation/2023-07-30/23-29-58/vis/bed/sample_1259_0.npz",
-                //"--pred_file", "outputs/3D-Front/generation/2023-08-13/23-14-59/vis/bed/sample_1050_0.npz", //original fixed latent
-                //"--pred_file", "outputs/3D-Front/generation/2023-08-03/16-36-12/vis/bed/sample_0_0.npz", //edgeweight1
-                //"--pred_file","outputs/3D-Front/generation/2023-08-02/21-59-38/vis/bed/sample_1000_0.npz", //edgeweight2
-                //"--pred_file","outputs/3D-Front/generation/2023-08-03/00-23-36/vis/bed/sample_0_0.npz", //edgeweight0.1
-                //"--pred_file", "outputs/3D-Front/generation/2023-08-11/22-45-18/vis/bed/sample_55_0.npz", //cd+0.1edge_loss
-                //"--pred_file", "outputs/3D-Front/generation/2023-08-13/22-16-08/vis/bed/sample_1050_0.npz", //cd+0.1edge_loss fixed latent
-                //"--pred_file", "outputs/3D-Front/generation/2023-08-15/17-01-17/vis/bed/sample_100_0.npz",//0.5cd+0.1edge_loss fixed latent
-                //"--pred_file", "outputs/3D-Front/generation/2023-09-07/10-16-32/vis/bed/sample_350_0.npz", //vae based layout
-                //"--pred_file", "outputs/3D-Front/generation/2023-09-06/15-32-31/vis/bed/sample_500_0.npz", //final result for now
-                //"--pred_file","outputs/3D-Front/generation/2023-09-07/15-38-48/vis/bed/sample_1000_0.npz", //original layout training
-                //"--pred_file", "outputs/3D-Front/generation/2023-09-08/11-14-24/vis/bed/sample_250_0.npz", //vae based without cd 150epoch
-                // "--pred_file", "outputs/3D-Front/generation/2023-09-11/21-30-08/vis/bed/sample_800_0.npz", //vae based change kl without cd
-                
-                //"--pred_file", "outputs/3D-Front/generation/2023-09-12/20-54-04/vis/bed/sample_200_0.npz", //vae based without cd  extend zdim
-                "--pred_file", "outputs/3D-Front/generation/2023-10-11/11-17-02/vis/bed/sample_609_0.npz",//vae based change kl
-                //"--cam_pos", "060",
-                "--device", "7",
-                "--use_retrieval"
+                "--pred_file", "outputs/3D-Front/generation/2023-07-30/23-29-58/vis/bed/sample_1259_0.npz", //ScenePriors
+                //"--pred_file", "outputs/3D-Front/generation/2023-08-11/22-45-18/vis/bed/sample_55_0.npz", //ScenePriors with Chamfer distance
+        
+                // "--pred_file", "outputs/3D-Front/generation/2023-09-11/21-30-08/vis/bed/sample_800_0.npz", //VAE based model
+                //"--pred_file", "outputs/3D-Front/generation/2023-10-11/11-17-02/vis/bed/sample_709_0.npz",//VAE based model with Chamfer distance
+                "--device", "6",
+                // "--use_retrieval"
             ]
         },
         {

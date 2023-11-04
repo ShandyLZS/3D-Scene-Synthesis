@@ -1,3 +1,5 @@
+#  Copyright (c) 10.2023. Zishan Li
+#  License: MIT
 import os
 # Env variable for server side
 os.environ['DISPLAY']=':96.0'
@@ -28,7 +30,7 @@ def parse_args():
     parser.add_argument('--cam_pos', type=list, help='Camera position with 3 numbers',
                         default=[0, 6, 0])
     parser.add_argument('--device', type=int, help='setup device',
-                        default=7)
+                        default=6)
     return parser.parse_args()
 
 
@@ -46,7 +48,7 @@ class VIS_3DFRONT_RESULT(VIS_BASE):
         renderer = vtk.vtkRenderer()
         renderer.ResetCamera()
 
-        cam_loc = np.array(self.cam_pos) # np.array([3, 0, 0])
+        cam_loc = np.array(self.cam_pos) 
         cam_fp = np.array([0, 0, 0])
         cam_up = np.array([1, 0, 0])
         fov_y = (2 * np.arctan((self.cam_K[1][2] * 2 + 1) / 2. / self.cam_K[1][1])) / np.pi * 180
@@ -76,7 +78,7 @@ class VIS_3DFRONT_RESULT(VIS_BASE):
         renderer.SetBackground(1., 1., 1.)
         return renderer
 
-def read_pred_data(pred_file, dataset_config, device, use_retrieval=False, objects_dataset=None):
+def read_pred_data(pred_file, dataset_config, device, exit_flag, use_retrieval=False, objects_dataset=None):
     pred_data = np.load(pred_file)
     box3ds = np.concatenate([pred_data['centers'], pred_data['sizes']], axis=-1)
     box3ds = np.pad(box3ds, ((0, 0), (0, 1)))
@@ -87,18 +89,20 @@ def read_pred_data(pred_file, dataset_config, device, use_retrieval=False, objec
     save_mesh_dir = Path('./temp/generations/%s/%s/%s'%(room_type, 'retrieval' if args.use_retrieval else 'no_retrieval',current_time)).joinpath(pred_file.name[:-4])
     if not save_mesh_dir.exists():
         save_mesh_dir.mkdir(parents=True)
-
+    cls_ids = []
     inst_mesh_files = []
     for inst_id, (vertices, faces) in enumerate(zip(mesh_vertices, mesh_faces)):
         save_file = save_mesh_dir.joinpath('%d.obj' % inst_id)
-        if not save_file.exists():
-            color = color_palette[category_ids[inst_id]]
-            if use_retrieval:
-                vertices, faces = retrieval_model(vertices, category_ids[inst_id], objects_dataset, dataset_config, device)
-            mesh = trimesh.Trimesh(vertices=vertices, faces=faces, process=False, vertex_colors=color)
-            mesh.export(save_file)
+        cls_ids.append(category_ids[inst_id])
+        if not exit_flag:
+            if not save_file.exists():
+                color = color_palette[category_ids[inst_id]]
+                if use_retrieval:
+                    vertices, faces = retrieval_model(vertices, category_ids[inst_id], objects_dataset, dataset_config, device)
+                mesh = trimesh.Trimesh(vertices=vertices, faces=faces, process=False, vertex_colors=color)
+                mesh.export(save_file)
         inst_mesh_files.append(str(save_file))
-    return {'box3ds': box3ds, 'category_ids': category_ids, 'mesh_files': inst_mesh_files}
+    return {'box3ds': box3ds, 'category_ids': category_ids, 'mesh_files': inst_mesh_files, 'cls_ids': cls_ids}
 
 def retrieval_model(source_vertices, cls_id, objects_dataset, dataset_config, device):
 
@@ -138,43 +142,58 @@ def retrieval_model(source_vertices, cls_id, objects_dataset, dataset_config, de
 if __name__ == '__main__':
     args = parse_args()
     dataset_config = Threed_Front_Config()
-    # pred_file_path = 'outputs/3D-Front/generation/2023-09-11/21-30-08/vis/bed/'
-    # pred_file_path = 'outputs/3D-Front/generation/2023-07-30/23-29-58/vis/bed/' # original model
-    # pred_file_path = "outputs/3D-Front/generation/2023-10-11/11-17-02/vis/bed/" # change kl
-    pred_file_path = 'outputs/3D-Front/generation/2023-08-11/22-45-18/vis/bed/' # original +cd
-    args.use_retrieval = True
-    for file_idx in range(2000):
-        args.pred_file = pred_file_path +'sample_' + str(file_idx)+ '_0.npz'
-        pred_file = Path(args.pred_file)
-        room_type = pred_file.parent.name
-        dataset_config.init_generic_categories_by_room_type(room_type)
+    # 
+    path_dic = {'vae_CD': "generated_scenes/VAE_CD/vis/bed/",# VAE with Chamfer distance
+                'vae':  'generated_scenes/VAE/vis/bed/', # VAE
+                'ScenePriors_CD':  'generated_scenes/ScenePriors_CD/vis/bed/', # ScenePrior with Chamfer distance
+                'ScenePriors':  'generated_scenes/ScenePriors/vis/bed/', # ScenePrior 
+                }
+    for mode, pred_path in path_dic.items():
+        if not os.path.exists('./eva_image/pred_'+mode):  
+            os.makedirs('./eva_image/pred_'+mode)
 
-        render_dir = pred_file.parents[1].joinpath('imgs')
+        args.use_retrieval = True
+        cls_id_list = []
+        file = open('./eva_image/pred_'+mode+'.txt','w')
+        for file_idx in range(2000):
+            exit_flag = False
+            if os.path.exists('./eva_image/pred_'+mode+'/sample_'+str(file_idx)+'_0.jpeg'):  
+                exit_flag = True
+                print('exist./eva_image/pred_'+mode+'/sample_'+str(file_idx)+'_0.jpeg')
+            args.pred_file = pred_path +'sample_' + str(file_idx)+ '_0.npz'
+            pred_file = Path(args.pred_file)
+            room_type = pred_file.parent.name
+            dataset_config.init_generic_categories_by_room_type(room_type)
 
-        # Build the dataset of 3D models
-        objects_dataset = ThreedFutureDataset.from_pickled_dataset(
-            args.path_to_pickled_3d_futute_models % (room_type)
-        )
+            render_dir = pred_file.parents[1].joinpath('imgs')
 
-        current_time = args.former_dir if args.former_dir is not None else datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
-        color_palette = np.array(sns.color_palette('hls', len(dataset_config.label_names)))
-        '''load gt and pred data'''
-        if not pred_file.exists():
-            raise FileNotFoundError('There is no such file.')
-        '''read pred data'''
-        device = args.device
+            # Build the dataset of 3D models
+            objects_dataset = ThreedFutureDataset.from_pickled_dataset(
+                args.path_to_pickled_3d_futute_models % (room_type)
+            )
 
-        pred_data = read_pred_data(pred_file, dataset_config, device, args.use_retrieval, objects_dataset)
+            current_time = args.former_dir if args.former_dir is not None else datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
+            color_palette = np.array(sns.color_palette('hls', len(dataset_config.label_names)))
+            '''load gt and pred data'''
+            if not pred_file.exists():
+                raise FileNotFoundError('There is no such file.')
+            '''read pred data'''
+            device = args.device
 
-        if pred_data is None:
-            raise ValueError('pred_data is None.')
+            pred_data = read_pred_data(pred_file, dataset_config, device, exit_flag, args.use_retrieval, objects_dataset)
+            cls_id_list.append(pred_data['cls_ids'])
+            [file.write(str(x)+',') for x in pred_data['cls_ids']]
+            if pred_data is None:
+                raise ValueError('pred_data is None.')
 
-        '''visualize results'''
-        # vis prediction
-        cam_pos = [int(i) for i in args.cam_pos]
-        viser = VIS_3DFRONT_RESULT(category_ids=pred_data['category_ids'], class_names=dataset_config.label_names,
-                                   mesh_files=pred_data['mesh_files'], cam_pos = cam_pos)
-        # target_path = str(pred_file).split('.')[0] + '_' + '_'.join(args.cam_pos) + '.jpg'
-        viser.visualize(save_path='./eva_image/pred_org_cd/sample_'+str(file_idx)+'_0.jpeg', offline=True)
-        file_idx += 1
-        print('save image %d\n', file_idx)
+            '''visualize results'''
+            if not exit_flag:
+                # vis prediction
+                cam_pos = [int(i) for i in args.cam_pos]
+                viser = VIS_3DFRONT_RESULT(category_ids=pred_data['category_ids'], class_names=dataset_config.label_names,
+                                           mesh_files=pred_data['mesh_files'], cam_pos = cam_pos)
+                viser.visualize(save_path='./eva_image/pred_'+mode+'/sample_'+str(file_idx)+'_0.jpeg', offline=True)
+                file_idx += 1
+                print('save '+ mode +' image', file_idx)
+        print('save object class')
+        file.close()

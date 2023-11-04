@@ -37,9 +37,9 @@ class Generation(object):
         '''Output network size'''
         self.subtester.show_net_n_params()
 
-    def generate_step(self, sample_idx, mode_weights, start_deform=False):
+    def generate_step(self, sample_idx, start_deform=False):
         room_type_idx = torch.tensor([[self.cfg.room_types.index(self.cfg.config.generation.room_type)]], device=self.device).long()
-        est_data = self.subtester.generate(room_type_idx, mode_weights, start_deform=start_deform)
+        est_data = self.subtester.generate(room_type_idx, start_deform=start_deform)
         # visualize intermediate results.
         if self.cfg.config.generation.dump_results:
             output_filename = 'sample_%d' % (sample_idx)
@@ -61,8 +61,7 @@ class Generation(object):
         with torch.no_grad():
             for sample_idx in range(n_generations):
                 start = time()
-                mode_weights = all_mode_weights[sample_idx, :]
-                self.generate_step(sample_idx, mode_weights, start_deform=self.cfg.config.start_deform)
+                self.generate_step(sample_idx, start_deform=self.cfg.config.start_deform)
                 self.cfg.info('Test time elapsed: (%f).' % (time() - start))
                 # ---------------------------------------------------------------------------------------
             self.cfg.info('Generation finished.')

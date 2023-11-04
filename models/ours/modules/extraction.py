@@ -1,3 +1,5 @@
+#  Copyright (c) 10.2023. Zishan Li
+#  License: MIT
 import torch
 import torch.nn as nn
 import torch.nn.functional as F

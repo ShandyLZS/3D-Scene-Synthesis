@@ -1,4 +1,4 @@
-#  Copyright (c) 9.2022. Yinyu Nie
+#  Copyright (c) 10.2023. Zishan Li
 #  License: MIT
 import os
 # Env variable for server side
@@ -50,9 +50,8 @@ class VIS_3DFRONT_RESULT(VIS_BASE):
         renderer = vtk.vtkRenderer()
         renderer.ResetCamera()
 
-        cam_loc = np.array(self.cam_pos) # np.array([3, 0, 0])
+        cam_loc = np.array(self.cam_pos) 
         cam_fp = np.array([0, 0, 0])
-        # cam_up = np.array([1, 0, 0])
         cam_up = np.array([0, 1, 0])
         fov_y = (2 * np.arctan((self.cam_K[1][2] * 2 + 1) / 2. / self.cam_K[1][1])) / np.pi * 180
         camera = self.set_camera(cam_loc, cam_fp, cam_up, fov_y=fov_y)
@@ -70,8 +69,6 @@ class VIS_3DFRONT_RESULT(VIS_BASE):
         # add floor
         planeSource = vtkPlaneSource()
         planeSource.SetCenter(0.0, 0.0, 0.0)
-        #planeSource.SetPoint1(-2,0,-2)
-        #planeSource.SetPoint2(4,0,6)
         planeSource.SetNormal(0.0, 1.0, 0.0)
         planeSource.Update()
         plane = planeSource.GetOutput()
@@ -187,5 +184,4 @@ if __name__ == '__main__':
     cam_pos = [int(i) for i in args.cam_pos]
     viser = VIS_3DFRONT_RESULT(category_ids=pred_data['category_ids'], class_names=dataset_config.label_names,
                                mesh_files=pred_data['mesh_files'], cam_pos = cam_pos)
-    # target_path = str(pred_file).split('.')[0] + '_' + '_'.join(args.cam_pos) + '.jpg'
     viser.visualize(save_path='./sample.jpeg')

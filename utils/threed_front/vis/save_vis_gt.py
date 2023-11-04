@@ -1,3 +1,5 @@
+#  Copyright (c) 10.2023. Zishan Li
+#  License: MIT
 import h5py
 import json
 import argparse
@@ -12,8 +14,6 @@ os.environ['DISPLAY']=':96.0'
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Visualize a 3D-FRONT gt sample.")
-#0a761819-05d1-4647-889b-a726747201b1_MasterBedroom-24539_84.hdf5
-#0a761819-05d1-4647-889b-a726747201b1_SecondBedroom-41297_85.hdf5
     parser.add_argument("--scene_json", type=str, default='0a761819-05d1-4647-889b-a726747201b1',
                         help="give the scene json name to visualize.")
     parser.add_argument("--room_id", type=str, default='MasterBedroom-24539',
@@ -32,6 +32,16 @@ def get_ez_room_type(room_type):
             break
     return output_ez_type
 
+def read_file(path, result):
+    files = os.listdir(path)
+    for idx, file in enumerate(files):
+        scene_json, room_id, _ = file.split('_')
+        if [scene_json, room_id] in result:
+            continue
+        else:
+            result.append([scene_json, room_id])
+    print(idx)
+    return result
 
 def save_render_img(args, dataset_config):
 
@@ -58,6 +68,7 @@ def save_render_img(args, dataset_config):
             class_segmap = sample_data['class_segmap'][:]
             inst_h5py = sample_data['inst_info']
             inst_info = []
+            category_id_list = []
             for inst_id in inst_h5py:
                 inst = {}
                 inst['bbox2d'] = inst_h5py[inst_id]['bbox2d'][:]
@@ -70,6 +81,7 @@ def save_render_img(args, dataset_config):
                 inst['model_path'] = inst_h5py[inst_id]['model_path'][0].decode('utf-8')
                 inst['room_id'] = inst_h5py[inst_id]['room_id'][0].decode('utf-8')
                 inst_info.append(inst)
+                category_id_list.append(inst['category_id'])
 
         '''Project objects to original cam poses'''
         projected_box2d_list = project_insts_to_2d(inst_info, cam_K, cam_T)
@@ -86,26 +98,31 @@ def save_render_img(args, dataset_config):
     # initialize category labels and mapping dict for specific room type.
     dataset_config.init_generic_categories_by_room_type(get_ez_room_type(room_type))
 
-    #viser_2D = VIS_3DFRONT_2D(color_maps=room_imgs, inst_info=instance_attrs, cls_maps=class_maps,
-    #                          class_names=dataset_config.label_names, projected_inst_boxes=projected_inst_boxes)
-    #viser_2D.draw_colors()
-    #viser_2D.draw_cls_maps()
-    #viser_2D.draw_box2d_from_3d()
-    #viser_2D.draw_inst_maps(type=('mask'))
     idx = 0
     viser = VIS_3DFRONT_SAMPLE(cam_K=cam_K, cam_Ts=[cam_Ts[idx]], inst_info=[instance_attrs[idx]],
                                layout_boxes=[layout_boxes[idx]], class_names=dataset_config.label_names)
-    viser.visualize(type=['mesh'], save_path='./eva_image/gt_large/'+str(args.scene_json)+str(args.room_id)+'.jpeg', offline=True)
-    # viser.visualize(view_id=0, type=['mesh'], offline=False)
-
+    viser.visualize(type=['mesh'], save_path='./eva_image/gt/'+str(args.scene_json)+str(args.room_id)+'.jpeg', offline=True)
+    return category_id_list
 
 if __name__ == '__main__':
     args = parse_args()
     dataset_config = Threed_Front_Config()
-    # file_path = './utils/threed_front/vis/gt_sample.json'
-    file_path = './utils/threed_front/vis/gt_sample_large.json'
-    file_names = json.load(open(file_path))
+
+    path = 'datasets/3D-Front/3D-FRONT_samples/bed'
+    result = []
+    num_generation = 1000
+    if not os.path.exists('./eva_image/gt'): 
+        os.makedirs('./eva_image/gt')
+    file_names = read_file(path, result)
+    save_cls_file = open('./eva_image/gt_cls.txt','w')
+    file_idx = 0
     for file_name in file_names:
         args.scene_json = file_name[0]
         args.room_id = file_name[1]
-        save_render_img(args, dataset_config)
+        category_id_list = save_render_img(args, dataset_config)
+        [save_cls_file.write(str(x)+',') for x in category_id_list]
+        file_idx += 1
+        print('save ground truth image', file_idx)
+        if file_idx == num_generation:
+            break
+    save_cls_file.close()

@@ -1,5 +1,5 @@
 #  P2RNet: model loader
-#  Copyright (c) 5.2021. Yinyu Nie
+#  Copyright (c) 10.2023. Zishan Li
 #  License: MIT
 from models.registers import METHODS, MODULES, LOSSES
 from models.network import BaseNetwork
@@ -135,7 +135,7 @@ class Generator(BaseNetwork):
 
         return outputs
 
-    def forward(self, latent_z, data, start_deform=False, **kwargs):
+    def forward(self, data, start_deform=False, **kwargs):
         '''
         Forward pass of the network
         :param data (dict): contains the data for training.
@@ -146,8 +146,8 @@ class Generator(BaseNetwork):
             max_len = self.cfg.max_n_obj
         else:
             max_len = data['max_len'].max()
-        # backbone_feat, completeness_score = self.backbone(latent_z, max_len, data['room_type_idx'])
-        backbone_feat, completeness_score, kl_div = self.backbone(latent_z, data, max_len, data['room_type_idx'], start_deform=False)
+
+        backbone_feat, completeness_score, kl_div = self.backbone(data, max_len, data['room_type_idx'], start_deform=False)
 
         box3ds = self.box_gen(backbone_feat, completeness_score)
 
@@ -163,14 +163,11 @@ class Generator(BaseNetwork):
         renderings = self.render(box3ds, meshes, data['cam_T'], data['cam_K'], data['image_size'],
                                  render_mask_tr, start_deform=start_deform, pred_mask=data['max_len'][:, 0], **kwargs)
 
-       #  return renderings
         return renderings, kl_div
 
-        # def loss(self, pred_data, gt_data, start_deform=False, **kwargs):
     def loss(self, pred_data, gt_data, kl_div, epoch, start_deform=False, **kwargs):
         '''
         calculate loss of est_out given gt_out.
         '''
-        # render_loss, extra_output = self.render_loss(pred_data, gt_data, start_deform=start_deform, **kwargs)
         render_loss, extra_output = self.render_loss(pred_data, gt_data, kl_div, epoch, start_deform=start_deform, **kwargs)
         return render_loss, extra_output

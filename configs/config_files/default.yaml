@@ -50,7 +50,7 @@ model:
     method: Generator
     arch:
       backbone:
-        module: DiffusionModel # DiffusionModel or AutoregressiveTransformer
+        module: VAEModel
         loss: Null
       box_gen:
         module: BoxDecoder

@@ -1,4 +1,4 @@
-#  Copyright (c) 2.2022. Yinyu Nie
+#  Copyright (c) 10.2023. Zishan Li
 #  License: MIT
 import numpy as np
 from scipy import stats
@@ -272,9 +272,7 @@ class MultiViewRenderLoss(BaseLoss):
 
             # Chamfer distance
             pred_meshes_verts = pred_meshes_verts[mesh_pred_idx]
-            # pred_meshes_faces = pred_meshes_faces[mesh_pred_idx]
             gt_jid_list = [self.cfg.model_jid_list[jid_ndx] for jid_ndx in gt_jids_ndx[mesh_gt_idx]]
-            # chamfer_dist = torch.tensor(0., device=self.device)
             chamfer_dist = self.CD_retrieval_parallel(pred_meshes_verts, gt_jid_list, device=self.device)
         else:
             mask_loss = torch.tensor(0., device=self.device)
@@ -299,14 +297,6 @@ class MultiViewRenderLoss(BaseLoss):
     def CD_retrieval_parallel(self, verts, gt_jid_list, device):
         CD_value = self.retrieval_parallel(verts, gt_jid_list, device)
         return CD_value
-
-    def CD_retrieval(self, verts, gt_jid_list, device):
-        CD_sum = torch.tensor(0., device=self.device)
-        for inst_id in range(verts.shape[0]):
-            single_verts = verts[inst_id,:,:]
-            CD_value = self.retrieval_model(single_verts, gt_jid_list[inst_id], device)
-            CD_sum += CD_value
-        return CD_sum
 
     def retrieval_parallel(self, source_vertices, jid_list, device):
         '''
@@ -350,51 +340,9 @@ class MultiViewRenderLoss(BaseLoss):
 
         return sum(CD_value)
 
-    def retrieval_model(self, source_vertices, jid, device):
-        # ours new
-        source_lbdb = source_vertices.min(axis=0)[0]
-        source_ubdb = source_vertices.max(axis=0)[0]
-        attach_to_floor = False
-        if source_lbdb[1] < 0.3:
-            attach_to_floor = True
-            source_lbdb[1] = 0
-        source_center = (source_lbdb + source_ubdb) / 2.
-
-        query_vertices = source_vertices - source_center
-        query_vertices = query_vertices/ (query_vertices.max() * 2)
-
-        # 90 degree around y axis
-        per_rot_mat = np.array([[0, 0, 1], [0, 1, 0], [-1, 0, 0]])
-        oi = self.model_dataset._filter_objects_by_jid(jid)
-        key_vertices = trimesh.load(oi.raw_model_path, force='mesh').sample(5000)
-
-        key_vertices = key_vertices * oi.scale
-        key_lbdb = key_vertices.min(axis=0)
-        key_ubdb = key_vertices.max(axis=0)
-        key_centroid = (key_lbdb + key_ubdb) / 2.
-        key_vertices = key_vertices - key_centroid          
-        key_vertices = key_vertices / (key_vertices.max() * 2)
-
-        key_vertices_w_rot = [key_vertices]
-        for i in range(3):
-            key_vertices_w_rot.append(key_vertices_w_rot[-1].dot(per_rot_mat))
-
-        # 4 x n_objs
-        key_vertices_w_rot = torch.from_numpy(np.array(key_vertices_w_rot)).to(device).float()
-        key_vertices_w_rot = key_vertices_w_rot.flatten(0, 1)
-
-        query_vertices = torch.from_numpy(query_vertices)[None].expand(key_vertices_w_rot.size(0), -1, -1).to(device).float()
-
-        cham_dist, cham_normals = chamfer_distance(query_vertices, key_vertices_w_rot, batch_reduction=None,
-                                                   point_reduction='mean', norm=1)
-        CD_value = cham_dist.min()
-
-        return CD_value
-    
     def annealing_schedule(self, t, T=800):
         M = 4 # number of cycles
         R = 0.5 # proportion used to increase kl_weight within a cycle
-        # T = 1000  total number of iterations
         T = T + 50
         tao = t % int(T/M) / (T/M)
         if tao <= R:
@@ -402,7 +350,6 @@ class MultiViewRenderLoss(BaseLoss):
         else:
             return torch.ones((1)).to(self.device)/20
 
-    # def __call__(self, est_data, gt_data, start_deform=False, return_matching=False, if_mask_loss=True, **kwargs):
     def __call__(self, est_data, gt_data, kl_div, epoch, start_deform=False, return_matching=False, if_mask_loss=True, **kwargs):
         '''Calculate rendering loss'''
         view_losses, extra_output = self.views_loss(est_data, gt_data, start_deform,
@@ -421,7 +368,6 @@ class MultiViewRenderLoss(BaseLoss):
         elif self.cfg.config.mode == 'demo':
             completeness_loss = completeness_loss * (self.cfg.config.data.n_views != 1)
 
-        # total_loss = view_losses['frustum_loss'] + view_losses['box_cls_loss'] + 5 * view_losses['box_loss'] + completeness_loss
         kl_weight = self.annealing_schedule(epoch, T=600)
         total_loss = view_losses['frustum_loss'] + view_losses['box_cls_loss'] + 5 * view_losses['box_loss'] + completeness_loss + kl_weight * kl_div
         if start_deform:

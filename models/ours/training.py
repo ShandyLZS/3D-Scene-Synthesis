@@ -1,5 +1,5 @@
 #  Trainer for P2RNet.
-#  Copyright (c) 5.2021. Yinyu Nie
+#  Copyright (c) 10.2023. Zishan Li
 #  License: MIT
 from models.training import BaseTrainer
 from net_utils.distributed import reduce_dict
@@ -89,11 +89,8 @@ class Trainer(BaseTrainer):
         data = self.to_device(data)
 
         '''network forwarding'''
-        latent_z = self.latent_input(data)
-        # est_data = self.generator(latent_z, data, start_deform=start_deform, **kwargs)
-        est_data, kl_div = self.generator(latent_z, data, start_deform=start_deform, **kwargs)
+        est_data, kl_div = self.generator(data, start_deform=start_deform, **kwargs)
 
         '''compute losses'''
-        # loss, extra_output = self.generator.module.loss(est_data, data, start_deform=start_deform, **kwargs)
         loss, extra_output = self.generator.module.loss(est_data, data, kl_div, epoch, start_deform=start_deform, **kwargs)
         return loss, extra_output

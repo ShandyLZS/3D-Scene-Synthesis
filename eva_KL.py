@@ -1,3 +1,5 @@
+#  Copyright (c) 10.2023. Zishan Li
+#  License: MIT
 import numpy as np
 
 def read_cls(path):
@@ -5,7 +7,6 @@ def read_cls(path):
     with open(path) as f:
         lines = f.read()
     cls_list = lines.split(',' )
-    # lt.extend(int(cls.replace("'",'')) for cls in cls_list)
     num = len(cls_list)
     cls_array = np.zeros((num, 21))
     for idx in range(num-1):
@@ -20,24 +21,17 @@ def categorical_kl(p, q):
 
 
 if __name__ == "__main__":
-    # gt_path = './eva_image/gt_cls.txt'
-    gt_path = './eva_image/gt_cls_large.txt'
-    pred_path_org = './eva_image/pred_cls_org.txt'
-    pred_path_orgcd = './eva_image/pred_cls_org_cd.txt'
-    pred_path_vae = './eva_image/pred_cls_vae.txt' # vae
-    pred_path_vae_ = './eva_image/pred_cls_vae_.txt' # vae + cd
-    gt_prob = read_cls(gt_path)
-    pred_prob1 = read_cls(pred_path_org)
-    pred_prob2 = read_cls(pred_path_orgcd)
-    pred_vae_prob = read_cls(pred_path_vae)
-    pred_vae_prob_ = read_cls(pred_path_vae_)
 
-    kl1 = categorical_kl(gt_prob, pred_prob1)
-    kl2 = categorical_kl(gt_prob, pred_prob2)
-    kl_vae = categorical_kl(gt_prob, pred_vae_prob)
-    kl_vae_ = categorical_kl(gt_prob, pred_vae_prob_)
-    print(kl1)
-    print(kl2)
-    print(kl_vae)
-    print(kl_vae_)
+    gt_path = './eva_image/gt_cls.txt' # ground-truth path
+                  
+    path_dic = {'VAE_CD': './eva_image/pred_vae_CD.txt',# VAE with Chamfer distance
+                'VAE':  './eva_image/pred_vae.txt', # VAE
+                'ScenePriors_CD':  './eva_image/pred_ScenePriors_CD.txt', # ScenePrior with Chamfer distance
+                'ScenePriors':  './eva_image/pred_ScenePriors.txt', # ScenePrior 
+                }
+    for mode, pred_path in path_dic.items():
+        gt_cls = read_cls(gt_path)
+        pred_cls = read_cls(pred_path)
+        cat_KL = categorical_kl(gt_cls, pred_cls)
+        print(mode + ' category KL is ', cat_KL)
 
