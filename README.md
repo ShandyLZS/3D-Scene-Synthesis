@@ -193,6 +193,7 @@ Since there is no display for the server, X Server can be built by following the
 |VAE_Shape           |  Bedroom  |Shape training |trained_model/VAE_Shape                        |VAE shape training result                              |
 |VAE_Shape_CD        |  Bedroom  |Shape training |trained_model/VAE_Shape_CD                     |VAE shape training with Chamfer distance result        |
 
+The pretrained model is saved at [Google Drive](https://drive.google.com/drive/folders/1M2xO52N6vJ6gN810JvhwBZXZRabZ75Y5).
 ## Generated Scenes
 
 |    Model name      | Room type |                Path              |             Description          |
